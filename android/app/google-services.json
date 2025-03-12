@@ -1,26 +1,36 @@
 {
   "project_info": {
-    "project_number": "881339968440",
-    "project_id": "pushnotification-19d2c",
-    "storage_bucket": "pushnotification-19d2c.firebasestorage.app"
+    "project_number": "44086127203",
+    "project_id": "fhealth-sphere---login",
+    "storage_bucket": "fhealth-sphere---login.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:881339968440:android:3c501a69dd4a2517167d4d",
+        "mobilesdk_app_id": "1:44086127203:android:1e1f7aecae07fb828aa656",
         "android_client_info": {
           "package_name": "com.zit.fhealthshpere"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "44086127203-slure7mgqba0mlncip5lbfi0r5j4hj96.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
-          "current_key": "AIzaSyBKQoOOxKSJGI8kkKSqNnCmnnUjni4hfxU"
+          "current_key": "AIzaSyCsYQHB2x9V3MJ3U5TruuBBA4tSxI2uH6E"
         }
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "44086127203-slure7mgqba0mlncip5lbfi0r5j4hj96.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
         }
       }
     }

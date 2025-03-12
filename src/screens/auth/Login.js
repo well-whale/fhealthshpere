@@ -75,7 +75,6 @@ export default function LoginScreen() {
     return (
         <SafeAreaView style={styles.container}>
             <StatusBar barStyle="dark-content" />
-            <BackButton />
 
             {/* Main content */}
             <View style={styles.content}>

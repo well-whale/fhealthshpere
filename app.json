@@ -21,12 +21,19 @@
         "backgroundColor": "#ffffff"
       },
       "package": "com.zit.fhealthshpere"
+      
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
       "react-native-ble-plx"
-    ]
+      
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "ffa144d6-d185-49dc-ac01-095c631ca4d4"
+      }
+    }
   }
 }

@@ -22,14 +22,13 @@ export default function Home() {
   const [diastolic, setDiastolic] = useState(80);
 
   const navigation = useNavigation();
-
   const popularFeatures = [
-    { id: 1, name: "Blood Pressure", icon: "water", color: "#FFE0E0" },
-    { id: 2, name: "Health Suggestion", icon: "medkit", color: "#E0F0FF" },
-    { id: 3, name: "Your History", icon: "document-text", color: "#E0FFE0" },
-    { id: 4, name: "Weight & BMI", icon: "body", color: "#FFE0FF" },
-    { id: 5, name: "Health Goals", icon: "fitness", color: "#FFF0E0" },
-    { id: 6, name: "More Features", icon: "apps", color: "#E0FFFF" },
+    { id: 1, name: "Emergency Contact", icon: "call", color: "#FFE0E0" },
+    { id: 2, name: "Limit Value", icon: "build", color: "#E0F0FF" },
+    { id: 3, name: "Band Conection", icon: "bluetooth", color: "#E0FFE0" },
+    // { id: 4, name: "Weight & BMI", icon: "body", color: "#FFE0FF" },
+    // { id: 5, name: "Health Goals", icon: "fitness", color: "#FFF0E0" },
+    // { id: 6, name: "More Features", icon: "apps", color: "#E0FFFF" },
   ];
 
   // Tạo hai giá trị animation để di chuyển hai đường SVG
@@ -166,7 +165,10 @@ export default function Home() {
                       handleBloodPressureClick();
                     } else if (item.name === "Health Suggestion") {
                       navigation.navigate("BloodPressure")
-                    } else {
+                    } else  if(item.name === "Band Conection"){
+                      navigation.navigate("Band Conection")
+                    } else
+                    {
                       // Handle other feature clicks
                       navigation.navigate(item.name.replace(/\s+/g, ''));
                     }
