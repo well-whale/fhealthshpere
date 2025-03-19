@@ -23,7 +23,7 @@ import Register from "../screens/Register";
 import BandConnection from "../screens/BandConection";
 import BluetoothReceiver from "../screens/History";
 import FormProfile from "../screens/accounts/FormProfile.";
-import LoginScreen from "../screens/auth/LoginGoogle";
+// import LoginScreen from "../screens/auth/LoginGoogle";
 
 // Tạo navigation reference để có thể điều hướng từ bên ngoài component
 export const navigationRef = createRef();
@@ -99,11 +99,11 @@ function HomeStack() {
         component={FormProfile}
         options={{ headerBackTitle: "Back", headerShown: true }}
       />
-      <Stack.Screen
+      {/* <Stack.Screen
         name="LoginScreen"
         component={LoginScreen}
         options={{ headerBackTitle: "Back", headerShown: true }}
-      />
+      /> */}
     </Stack.Navigator>
   );
 }

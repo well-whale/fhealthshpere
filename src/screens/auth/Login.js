@@ -9,23 +9,22 @@ import {
   StatusBar,
   ActivityIndicator,
   Dimensions,
+  Alert,
+  Platform,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import * as WebBrowser from "expo-web-browser";
-import { useIdTokenAuthRequest } from "expo-auth-session/providers/google";
-import {
-  getAuth,
-  GoogleAuthProvider,
-  signInWithCredential,
-} from "firebase/auth";
-import { auth } from "../../firebase/firebaseConfig";
-import BackButton from "../../components/Button/BackButton";
 import { useNavigation } from "@react-navigation/native";
-
-WebBrowser.maybeCompleteAuthSession();
+import auth from "@react-native-firebase/auth";
+import { GoogleSignin } from "@react-native-google-signin/google-signin";
 
 // Get screen dimensions
 const { width, height } = Dimensions.get("window");
+
+// Configure Google Sign-In
+GoogleSignin.configure({
+  webClientId: "44086127203-slure7mgqba0mlncip5lbfi0r5j4hj96.apps.googleusercontent.com",
+  
+});
 
 export default function LoginScreen() {
   const [currentPage, setCurrentPage] = useState(0);
@@ -56,26 +55,39 @@ export default function LoginScreen() {
     },
   ];
 
-  // Google Auth
-  const [request, response, promptAsync] = useIdTokenAuthRequest({
-    clientId:
-      "44086127203-slure7mgqba0mlncip5lbfi0r5j4hj96.apps.googleusercontent.com",
-  });
-
-  useEffect(() => {
-    if (response?.type === "success") {
-      setIsLoading(true);
-      const { id_token } = response.params;
-      const credential = GoogleAuthProvider.credential(id_token);
-
-      signInWithCredential(auth, credential)
-        .then(() => {
-          console.log("Google Sign-In successful!");
-        })
-        .catch((error) => console.error("Google Sign-In failed:", error))
-        .finally(() => setIsLoading(false));
+  const handleGoogleSignIn = async () => {
+    setIsLoading(true);
+    try {
+      // Đảm bảo người dùng đã đăng xuất trước khi đăng nhập
+      await GoogleSignin.signOut();
+      
+      // Kiểm tra xem thiết bị có hỗ trợ Google Play Services
+      await GoogleSignin.hasPlayServices();
+      
+      // Lấy token ID của người dùng
+      const { idToken } = await GoogleSignin.signIn();
+      
+      // Tạo Google credential
+      const googleCredential = auth.GoogleAuthProvider.credential(idToken);
+      
+      // Đăng nhập người dùng bằng credential
+      const userCredential = await auth().signInWithCredential(googleCredential);
+      
+      console.log("Đăng nhập thành công:", userCredential.user.uid);
+      
+      return userCredential;
+    } catch (error) {
+      console.error("Lỗi xác thực chi tiết:", error);
+      
+      if (error.code === 'DEVELOPER_ERROR') {
+        console.log("Kiểm tra cấu hình Google Sign-In và Firebase");
+      }
+      
+      Alert.alert("Đăng nhập thất bại", "Không thể đăng nhập bằng Google. Vui lòng thử lại sau.");
+    } finally {
+      setIsLoading(false);
     }
-  }, [response]);
+  };
 
   // Auto slide effect
   useEffect(() => {
@@ -126,9 +138,8 @@ export default function LoginScreen() {
         <View style={styles.buttonContainer}>
           <TouchableOpacity
             style={styles.loginButton}
-            // onPress={() => promptAsync()}
-            onPress={() => navigation.navigate("LoginScreen")}
-            disabled={!request || isLoading}
+            onPress={handleGoogleSignIn}
+            disabled={isLoading}
           >
             {isLoading ? (
               <ActivityIndicator size="small" color="#fff" />
@@ -232,23 +243,10 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 10, // Khoảng cách giữa chữ và icon
+    gap: 10,
   },
   loginButtonText: {
     color: "white",
-    fontSize: 16,
-    fontWeight: "bold",
-  },
-  signupButton: {
-    backgroundColor: "#f8f8f8",
-    paddingVertical: 15,
-    paddingHorizontal: 30,
-    borderRadius: 25,
-    width: "45%",
-    alignItems: "center",
-  },
-  signupButtonText: {
-    color: "#333",
     fontSize: 16,
     fontWeight: "bold",
   },
