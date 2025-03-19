@@ -23,6 +23,7 @@ import Register from "../screens/Register";
 import BandConnection from "../screens/BandConection";
 import BluetoothReceiver from "../screens/History";
 import FormProfile from "../screens/accounts/FormProfile.";
+import LoginScreen from "../screens/auth/LoginGoogle";
 
 // Tạo navigation reference để có thể điều hướng từ bên ngoài component
 export const navigationRef = createRef();
@@ -33,20 +34,76 @@ const Stack = createStackNavigator();
 function HomeStack() {
   return (
     <Stack.Navigator>
-      <Stack.Screen name="HomeMain" component={Home} options={{ headerShown: false }} />
-      <Stack.Screen name="Profile" component={Profile} options={{ headerBackTitle: "Back", headerShown: true }} />
-      <Stack.Screen name="Login" component={Login} options={{ headerBackTitle: "Back", headerShown: true }} />
-      <Stack.Screen name="Register" component={Register} options={{ headerBackTitle: "Back", headerShown: true }} />
-      <Stack.Screen name="BloodPressure" component={BloodPressureScreen} options={{ headerBackTitle: "Back", headerShown: true }} />
-      <Stack.Screen name="Personal Detail" component={PersionalDetailScreen} options={{ headerBackTitle: "Back", headerShown: true }} />
-      <Stack.Screen name="Edit Personal Information" component={EditPersonalInformationScreen} options={{ headerBackTitle: "Back", headerShown: true }} />
-      <Stack.Screen name="Add Emergency Contact" component={EmergencyContactForm} options={{ headerBackTitle: "Back", headerShown: true }} />
-      <Stack.Screen name="Update Emergency Contact" component={EmergencyContactEdit} options={{ headerBackTitle: "Back", headerShown: true }} />
-      <Stack.Screen name="BP Alert Settings" component={BPAlertSettings} options={{ headerBackTitle: "Back", headerShown: true }} />
-      <Stack.Screen name="Set Measurement Reminder" component={MeasurementReminderScreen} options={{ headerBackTitle: "Back", headerShown: true }} />
-      <Stack.Screen name="Band Conection" component={BandConnection} options={{ headerBackTitle: "Back", headerShown: true }} />
-      <Stack.Screen name="Form Profile" component={FormProfile} options={{ headerBackTitle: "Back", headerShown: true }} />
-
+      <Stack.Screen
+        name="HomeMain"
+        component={Home}
+        options={{ headerShown: false }}
+      />
+      <Stack.Screen
+        name="Profile"
+        component={Profile}
+        options={{ headerBackTitle: "Back", headerShown: true }}
+      />
+      <Stack.Screen
+        name="Login"
+        component={Login}
+        options={{ headerBackTitle: "Back", headerShown: true }}
+      />
+      <Stack.Screen
+        name="Register"
+        component={Register}
+        options={{ headerBackTitle: "Back", headerShown: true }}
+      />
+      <Stack.Screen
+        name="BloodPressure"
+        component={BloodPressureScreen}
+        options={{ headerBackTitle: "Back", headerShown: true }}
+      />
+      <Stack.Screen
+        name="Personal Detail"
+        component={PersionalDetailScreen}
+        options={{ headerBackTitle: "Back", headerShown: true }}
+      />
+      <Stack.Screen
+        name="Edit Personal Information"
+        component={EditPersonalInformationScreen}
+        options={{ headerBackTitle: "Back", headerShown: true }}
+      />
+      <Stack.Screen
+        name="Add Emergency Contact"
+        component={EmergencyContactForm}
+        options={{ headerBackTitle: "Back", headerShown: true }}
+      />
+      <Stack.Screen
+        name="Update Emergency Contact"
+        component={EmergencyContactEdit}
+        options={{ headerBackTitle: "Back", headerShown: true }}
+      />
+      <Stack.Screen
+        name="BP Alert Settings"
+        component={BPAlertSettings}
+        options={{ headerBackTitle: "Back", headerShown: true }}
+      />
+      <Stack.Screen
+        name="Set Measurement Reminder"
+        component={MeasurementReminderScreen}
+        options={{ headerBackTitle: "Back", headerShown: true }}
+      />
+      <Stack.Screen
+        name="Band Conection"
+        component={BandConnection}
+        options={{ headerBackTitle: "Back", headerShown: true }}
+      />
+      <Stack.Screen
+        name="Form Profile"
+        component={FormProfile}
+        options={{ headerBackTitle: "Back", headerShown: true }}
+      />
+      <Stack.Screen
+        name="LoginScreen"
+        component={LoginScreen}
+        options={{ headerBackTitle: "Back", headerShown: true }}
+      />
     </Stack.Navigator>
   );
 }
@@ -74,7 +131,7 @@ function MainTabs() {
         tabBarInactiveBackgroundColor: "transparent",
         tabBarLabelStyle: {
           fontSize: 12,
-          fontWeight: focused => focused ? "600" : "400",
+          fontWeight: (focused) => (focused ? "600" : "400"),
           marginBottom: 5,
         },
         tabBarStyle: {
@@ -91,8 +148,8 @@ function MainTabs() {
           shadowOpacity: 0.15,
           shadowRadius: 10,
           paddingHorizontal: 5,
-          marginLeft:5,
-          marginRight:5
+          marginLeft: 5,
+          marginRight: 5,
         },
         tabBarItemStyle: {
           marginTop: 10,
@@ -105,56 +162,62 @@ function MainTabs() {
         showLabel: true,
       }}
     >
-      <Tab.Screen 
-        name="Home" 
+      <Tab.Screen
+        name="Home"
         component={HomeStack}
         options={{
           tabBarButton: (props) => (
-            <TabBarCustomButton 
-              {...props} 
+            <TabBarCustomButton
+              {...props}
               containerStyle={{
-                backgroundColor: props.accessibilityState.selected ? "rgba(228, 88, 88, 0.91)" : "transparent",
+                backgroundColor: props.accessibilityState.selected
+                  ? "rgba(228, 88, 88, 0.91)"
+                  : "transparent",
                 borderRadius: 20,
                 flex: 1,
                 marginHorizontal: 5,
               }}
             />
-          )
+          ),
         }}
       />
-      <Tab.Screen 
-        name="Schedule" 
-        component={Schedule} 
+      <Tab.Screen
+        name="Schedule"
+        component={Schedule}
         options={{
           tabBarButton: (props) => (
-            <TabBarCustomButton 
-              {...props} 
+            <TabBarCustomButton
+              {...props}
               containerStyle={{
-                backgroundColor: props.accessibilityState.selected ? "rgba(228, 88, 88, 0.91)" : "transparent",
+                backgroundColor: props.accessibilityState.selected
+                  ? "rgba(228, 88, 88, 0.91)"
+                  : "transparent",
                 borderRadius: 20,
                 flex: 1,
                 marginHorizontal: 5,
               }}
             />
-          )
+          ),
         }}
       />
-      
-      <Tab.Screen 
-        name="Notification" 
-        component={Notification} 
+
+      <Tab.Screen
+        name="Notification"
+        component={Notification}
         options={{
           tabBarButton: (props) => (
-            <TabBarCustomButton 
-              {...props} 
+            <TabBarCustomButton
+              {...props}
               containerStyle={{
-                backgroundColor: props.accessibilityState.selected ? "rgba(228, 88, 88, 0.91)" : "transparent", 
+                backgroundColor: props.accessibilityState.selected
+                  ? "rgba(228, 88, 88, 0.91)"
+                  : "transparent",
                 borderRadius: 20,
                 flex: 1,
                 marginHorizontal: 5,
               }}
             />
-          )
+          ),
         }}
       />
     </Tab.Navigator>
@@ -167,11 +230,11 @@ const TabBarCustomButton = ({ children, containerStyle, onPress }) => {
     <TouchableOpacity
       style={[
         {
-          justifyContent: 'center',
-          alignItems: 'center',
+          justifyContent: "center",
+          alignItems: "center",
           flex: 1,
         },
-        containerStyle
+        containerStyle,
       ]}
       activeOpacity={0.7}
       onPress={onPress}
@@ -186,10 +249,26 @@ export default function Navigation() {
     <NavigationContainer ref={navigationRef}>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         <Stack.Screen name="MainTabs" component={MainTabs} />
-        <Stack.Screen name="Profile" component={Profile} options={{ headerBackTitle: "Back", headerShown: true }} />
-        <Stack.Screen name="Login" component={Login} options={{ headerBackTitle: "Back", headerShown: true }} />
-        <Stack.Screen name="Register" component={Register} options={{ headerBackTitle: "Back", headerShown: true }} />
-        <Stack.Screen name="BloodPressure" component={BloodPressureScreen} options={{ headerBackTitle: "Back", headerShown: true }} />
+        <Stack.Screen
+          name="Profile"
+          component={Profile}
+          options={{ headerBackTitle: "Back", headerShown: true }}
+        />
+        <Stack.Screen
+          name="Login"
+          component={Login}
+          options={{ headerBackTitle: "Back", headerShown: true }}
+        />
+        <Stack.Screen
+          name="Register"
+          component={Register}
+          options={{ headerBackTitle: "Back", headerShown: true }}
+        />
+        <Stack.Screen
+          name="BloodPressure"
+          component={BloodPressureScreen}
+          options={{ headerBackTitle: "Back", headerShown: true }}
+        />
       </Stack.Navigator>
     </NavigationContainer>
   );
