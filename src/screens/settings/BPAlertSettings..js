@@ -38,10 +38,8 @@ const BPAlertSettings = () => {
         <TouchableOpacity style={styles.backButton}>
           
         </TouchableOpacity>
-        <Text style={styles.headerTitle}></Text>
-        <TouchableOpacity>
-          <Text style={styles.saveButton}>Save</Text>
-        </TouchableOpacity>
+        
+        
       </View>
       
       {/* Main Content */}
@@ -51,14 +49,14 @@ const BPAlertSettings = () => {
           <View style={styles.sectionHeader}>
             <Text style={styles.sectionTitle}>Alert Thresholds</Text>
             <View style={styles.switchContainer}>
-              <Ionicons name="notifications" size={20} color="#F9A825" style={styles.alertIcon} />
+              {/* <Ionicons name="notifications" size={20} color="#F9A825" style={styles.alertIcon} />
               <Switch
                 value={alertsEnabled}
                 onValueChange={setAlertsEnabled}
                 trackColor={{ false: '#E0E0E0', true: '#BBD6FF' }}
                 thumbColor={alertsEnabled ? '#007AFF' : '#F5F5F5'}
                 ios_backgroundColor="#E0E0E0"
-              />
+              /> */}
             </View>
           </View>
           

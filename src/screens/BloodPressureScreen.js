@@ -23,7 +23,7 @@ import Svg, {
 } from 'react-native-svg';
 import { BleManager } from 'react-native-ble-plx';
 import { StatusBar } from 'expo-status-bar';
-// import { request, PERMISSIONS, RESULTS } from 'react-native-permissions';
+import { request, PERMISSIONS, RESULTS } from 'react-native-permissions';
 
 const { width } = Dimensions.get('window');
 const MAX_WIDTH = Math.min(width - 40, 380);
@@ -53,106 +53,107 @@ const BloodPressureScreen = () => {
     const animatedDiastolic = useState(new Animated.Value(0))[0];
 
     // Request Bluetooth permissions
-    //   const requestBluetoothPermissions = async () => {
-    //     if (Platform.OS === 'android') {
-    //       const bluetoothScanPermission = await request(
-    //         PERMISSIONS.ANDROID.BLUETOOTH_SCAN
-    //       );
-    //       const bluetoothConnectPermission = await request(
-    //         PERMISSIONS.ANDROID.BLUETOOTH_CONNECT
-    //       );
-    //       const fineLocationPermission = await request(
-    //         PERMISSIONS.ANDROID.ACCESS_FINE_LOCATION
-    //       );
+    const requestBluetoothPermissions = async () => {
+        if (Platform.OS === 'android') {
+            const bluetoothScanPermission = await request(
+                PERMISSIONS.ANDROID.BLUETOOTH_SCAN
+            );
+            const bluetoothConnectPermission = await request(
+                PERMISSIONS.ANDROID.BLUETOOTH_CONNECT
+            );
+            const fineLocationPermission = await request(
+                PERMISSIONS.ANDROID.ACCESS_FINE_LOCATION
+            );
 
-    //       return (
-    //         bluetoothScanPermission === RESULTS.GRANTED &&
-    //         bluetoothConnectPermission === RESULTS.GRANTED &&
-    //         fineLocationPermission === RESULTS.GRANTED
-    //       );
-    //     } else if (Platform.OS === 'ios') {
-    //       const bluetoothPermission = await request(PERMISSIONS.IOS.BLUETOOTH_PERIPHERAL);
-    //       return bluetoothPermission === RESULTS.GRANTED;
-    //     }
-    //     return false;
-    //   };
+            return (
+                bluetoothScanPermission === RESULTS.GRANTED &&
+                bluetoothConnectPermission === RESULTS.GRANTED &&
+                fineLocationPermission === RESULTS.GRANTED
+            );
+        } else if (Platform.OS === 'ios') {
+            const bluetoothPermission = await request(PERMISSIONS.IOS.BLUETOOTH_PERIPHERAL);
+            return bluetoothPermission === RESULTS.GRANTED;
+        }
+        return false;
+    };
 
     // Scan for Bluetooth devices
-    //   const scanForDevices = async () => {
-    //     const hasPermission = await requestBluetoothPermissions();
+    const scanForDevices = async () => {
+        const hasPermission = await requestBluetoothPermissions();
 
-    //     if (!hasPermission) {
-    //       Alert.alert('Permission Error', 'Bluetooth permissions are required');
-    //       return;
-    //     }
+        if (!hasPermission) {
+            Alert.alert('Permission Error', 'Bluetooth permissions are required');
+            return;
+        }
 
-    //     if (scanning) return;
+        if (scanning) return;
 
-    //     setScanning(true);
+        setScanning(true);
 
-    //     // Stop scanning after 10 seconds
-    //     setTimeout(() => {
-    //       bleManager.stopDeviceScan();
-    //       setScanning(false);
-    //     }, 10000);
+        // Stop scanning after 10 seconds
+        setTimeout(() => {
+            bleManager.stopDeviceScan();
+            setScanning(false);
+        }, 10000);
 
-    //     try {
-    //       bleManager.startDeviceScan(null, null, (error, device) => {
-    //         if (error) {
-    //           console.error('Scan error:', error);
-    //           setScanning(false);
-    //           return;
-    //         }
+        try {
+            bleManager.startDeviceScan(null, null, (error, device) => {
+                if (error) {
+                    console.error('Scan error:', error);
+                    setScanning(false);
+                    return;
+                }
 
-    //         // Look for blood pressure monitor devices
-    //         // This is a simplified example - real implementation would filter by specific services
-    //         if (device.name && (
-    //             device.name.toLowerCase().includes('bp') || 
-    //             device.name.toLowerCase().includes('blood') || 
-    //             device.name.toLowerCase().includes('pressure') ||
-    //             device.name.toLowerCase().includes('heart')
-    //           )) {
-    //           bleManager.stopDeviceScan();
-    //           connectToDevice(device);
-    //         }
-    //       });
-    //     } catch (error) {
-    //       console.error('Error starting scan:', error);
-    //       setScanning(false);
-    //     }
-    //   };
+                // Look for blood pressure monitor devices
+                // This is a simplified example - real implementation would filter by specific services
+                if (device.name && (
+                    device.name.toLowerCase().includes('bp') || 
+                    device.name.toLowerCase().includes('blood') || 
+                    device.name.toLowerCase().includes('pressure') ||
+                    device.name.toLowerCase().includes('heart') ||
+                    device.name.toLowerCase().includes('edifier')
+                )) {
+                    bleManager.stopDeviceScan();
+                    connectToDevice(device);
+                }
+            });
+        } catch (error) {
+            console.error('Error starting scan:', error);
+            setScanning(false);
+        }
+    };
 
     // Connect to a Bluetooth device
-    //   const connectToDevice = async (device) => {
-    //     try {
-    //       const connectedDevice = await device.connect();
-    //       setDeviceName(device.name || 'Unknown Device');
-    //       setIsConnected(true);
-    //       setScanning(false);
+    const connectToDevice = async (device) => {
+        try {
+            const connectedDevice = await device.connect();
+            setDeviceName(device.name || 'Unknown Device');
+            setIsConnected(true);
+            setScanning(false);
 
-    //       Alert.alert('Connected', `Connected to ${device.name || 'device'}`);
+            Alert.alert('Connected', `Connected to ${device.name || 'device'}`);
 
-    //       // In a real app, you would discover services and characteristics here
-    //       // and set up listeners for incoming data
-    //     } catch (error) {
-    //       console.error('Connection error:', error);
-    //       setIsConnected(false);
-    //       Alert.alert('Connection Failed', 'Could not connect to device');
-    //     }
-    //   };
+            // In a real app, you would discover services and characteristics here
+            // and set up listeners for incoming data
+        } catch (error) {
+            console.error('Connection error:', error);
+            setIsConnected(false);
+            Alert.alert('Connection Failed', 'Could not connect to device');
+        }
+    };
 
     // Disconnect from Bluetooth device
-    //   const disconnectDevice = async () => {
-    //     if (isConnected) {
-    //       try {
-    //         await bleManager.cancelDeviceConnection(deviceName);
-    //         setIsConnected(false);
-    //         setDeviceName('No Device');
-    //       } catch (error) {
-    //         console.error('Disconnect error:', error);
-    //       }
-    //     }
-    //   };
+    const disconnectDevice = async () => {
+        if (isConnected) {
+            try {
+                await bleManager.cancelDeviceConnection(deviceName);
+                setIsConnected(false);
+                setDeviceName('No Device');
+            } catch (error) {
+                console.error('Disconnect error:', error);
+            }
+        }
+    };
 
     // Cleanup Bluetooth manager on unmount
     useEffect(() => {
@@ -426,7 +427,10 @@ const BloodPressureScreen = () => {
 
                     {/* Main display container */}
                     <View style={styles.mainDisplay}>
-
+                        {/* Heart animation */}
+                        <View style={styles.heartContainer}>
+                            {renderHeart()}
+                        </View>
 
                         {/* Custom Heart Rate Visualization */}
                         <View style={styles.pulseContainer}>
@@ -509,23 +513,23 @@ const BloodPressureScreen = () => {
                             </Text>
                         </TouchableOpacity>
 
-                        {/* <TouchableOpacity
-          onPress={isConnected ? disconnectDevice : scanForDevices}
-          style={[
-            styles.button,
-            isConnected ? styles.buttonDisconnect : styles.buttonConnect,
-            scanning ? styles.buttonDisabled : null
-          ]}
-          disabled={scanning}
-        >
-          <Text style={styles.buttonText}>
-            {scanning 
-              ? 'Scanning...' 
-              : isConnected 
-                ? 'Disconnect' 
-                : 'Connect Bluetooth Device'}
-          </Text>
-        </TouchableOpacity> */}
+                        <TouchableOpacity
+                            onPress={isConnected ? disconnectDevice : scanForDevices}
+                            style={[
+                                styles.button,
+                                isConnected ? styles.buttonDisconnect : styles.buttonConnect,
+                                scanning ? styles.buttonDisabled : null
+                            ]}
+                            disabled={scanning}
+                        >
+                            <Text style={styles.buttonText}>
+                                {scanning 
+                                ? 'Scanning...' 
+                                : isConnected 
+                                    ? 'Disconnect' 
+                                    : 'Connect Bluetooth Device'}
+                            </Text>
+                        </TouchableOpacity>
                     </View>
 
                     {/* Instructions */}
@@ -543,17 +547,13 @@ const BloodPressureScreen = () => {
                 <View style={{ height: 100 }} />
             </ScrollView>
         </SafeAreaView>
-
-
     );
 };
 
 const styles = StyleSheet.create({
     safeArea: {
         flex: 1,
-        // backgroundColor: "rgba(228, 88, 88, 0.91)",
         backgroundColor: "rgb(255, 255, 255)",
-
     },
     container: {
         flex: 1,
@@ -561,7 +561,6 @@ const styles = StyleSheet.create({
         padding: 20,
         alignItems: 'center',
         paddingTop: 40
-
     },
     header: {
         alignItems: 'center',
@@ -788,6 +787,7 @@ const styles = StyleSheet.create({
         shadowOpacity: 0.1,
         shadowRadius: 5,
         elevation: 3,
+        marginBottom: 10,
     },
     buttonMeasure: {
         backgroundColor: '#4299E1',

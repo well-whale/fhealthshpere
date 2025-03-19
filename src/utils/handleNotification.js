@@ -1,16 +1,25 @@
-import { getMessaging, getToken, onMessage, requestPermission, onTokenRefresh } from '@react-native-firebase/messaging';
+import { getMessaging, getToken, onMessage, onTokenRefresh, requestPermission } from '@react-native-firebase/messaging';
 import { getApp } from '@react-native-firebase/app';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import axios from 'axios';
-import { Alert } from 'react-native';
-import { getInstallations } from 'firebase/installations';// ✅ Yêu cầu quyền thông báo từ người dùng
-import app from '@react-native-firebase/app';
-import installations from "@react-native-firebase/installations";
+import { Alert, Platform } from 'react-native';
+import * as Notifications from 'expo-notifications';
+
+// Add this at the top of your file
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,  // This controls whether the notification appears as a banner
+    shouldPlaySound: true,
+    shouldSetBadge: true,
+  }),
+});
+// Request notification permissions
 export const requestUserPermission = async () => {
   try {
+    // Request permission for Firebase messaging
     const messaging = getMessaging(getApp());
     const authStatus = await requestPermission(messaging);
-
+    
     if (authStatus === 1 || authStatus === 2) { // 1 = AUTHORIZED, 2 = PROVISIONAL
       console.log('✅ Quyền thông báo đã được cấp.');
       await new HandleNotification().getFcmToken();
@@ -22,37 +31,56 @@ export const requestUserPermission = async () => {
   }
 };
 
-// ✅ Lắng nghe thông báo ngay cả khi app đang mở
+// Listen for messages even when app is open
 export const listenForMessages = () => {
   try {
     const messaging = getMessaging(getApp());
 
-    onMessage(messaging, (remoteMessage) => {
-      console.log('📩 Nhận được thông báo:', remoteMessage);
-      Alert.alert(remoteMessage.notification.title, remoteMessage.notification.body);
+    // Set up foreground notification handler
+    onMessage(messaging, async (remoteMessage) => {
+      console.log('📩 Nhận được thông báo khi app đang mở:', remoteMessage);
+      
+      // Display notification using Expo notifications when app is in foreground
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title: remoteMessage.notification?.title || 'Thông báo mới',
+          body: remoteMessage.notification?.body || '',
+          data: remoteMessage.data,
+        },
+        trigger: null, // Show immediately
+      });
+      
+      // No Alert.alert() here
     });
+
+   
   } catch (error) {
     console.error('⚠️ Lỗi khi lắng nghe thông báo:', error);
   }
 };
 
-// ✅ Gửi thông báo đến thiết bị
+// Send notification to device
 export const sendNotification = async () => {
   let fcmToken = await AsyncStorage.getItem('fcmtoken');
 
   try {
     const message = {
       message: {
-        token: fcmToken,  // Thay bằng FCM token của thiết bị
+        token: fcmToken,
         notification: {
           title: "📢 Lời nhắc kiểm tra sức khỏe",
           body: "Đã đến lúc kiểm tra huyết áp của bạn!",
         },
         android: {
-          priority: "high", // Giúp tăng độ ưu tiên khi app tắt
+          priority: "high",
           notification: {
             sound: "default",
-            channel_id: "health_reminder",  // Tạo kênh thông báo trên Android 8+
+            channel_id: "health_reminder",
+            visibility: "public",
+            // Add this to ensure foreground notifications
+            default_sound: true,
+            default_vibrate_timings: true,
+            default_light_settings: true,
           }
         },
         apns: {
@@ -60,15 +88,22 @@ export const sendNotification = async () => {
             aps: {
               sound: "default",
               contentAvailable: true,
+              // Add this to ensure foreground notifications on iOS
+              badge: 1,
+              mutable_content: 1,
             }
           }
+        },
+        // Add this to ensure the notification is displayed when app is in foreground
+        data: {
+          forceShow: "true",
         }
       }
     };
 
     await axios.post('https://fcm.googleapis.com/v1/projects/pushnotification-19d2c/messages:send', message, {
       headers: {
-        'Authorization': 'Bearer ya29.a0AXeO80Q7UinJXtJUSZOgFKflUZRB4e6nWtf628tvs5kM5g3gZvsWiJpqwBbjNBH8RyEWseMvlsaLFXWxWpoo3jgl7R4xiFzU_oJnWDT6l-JUi-pYDS7OpJKw0-LrH5V6j-EMJNnrlK0AN6PUdCZ5R3C9eAT-jwB7FflOu0gOL331RgaCgYKAc0SARISFQHGX2MiSS6wEKaRFkcseJhWJ2DBog0181',
+        'Authorization': 'Bearer YOUR_SERVER_KEY', // Replace with secure server key
         'Content-Type': 'application/json',
       }
     });
@@ -79,6 +114,7 @@ export const sendNotification = async () => {
     console.error("⚠️ Lỗi khi gửi thông báo:", error);
   }
 };
+
 
 export class HandleNotification {
   // ✅ Lấy và lưu FCM Token
@@ -99,12 +135,6 @@ export class HandleNotification {
         }
       } else {
         console.log('✅ FCM Token đã tồn tại:', fcmToken);
-      }
-      try {
-        const installationId = await installations().getId();
-        console.log("Firebase Installation ID:", installationId);
-      } catch (error) {
-        console.error("Lỗi khi lấy Installation ID:", error);
       }
       // 🔄 Lắng nghe sự kiện cập nhật Token
       onTokenRefresh(messaging, async (newToken) => {

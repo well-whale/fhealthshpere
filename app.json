@@ -21,14 +21,12 @@
         "backgroundColor": "#ffffff"
       },
       "package": "com.zit.fhealthshpere"
-      
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
       "react-native-ble-plx"
-      
     ],
     "extra": {
       "eas": {

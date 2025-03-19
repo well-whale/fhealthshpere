@@ -9,6 +9,7 @@ export default function Register() {
   useEffect(() => {
     const fetchToken = async () => {
       const token = await AsyncStorage.getItem('fcmtoken');
+      console.log('🔑 FCM Token:', token);
       setFcmToken(token);
     };
     fetchToken();

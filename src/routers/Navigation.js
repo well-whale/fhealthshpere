@@ -1,16 +1,17 @@
-import React from "react";
+import React, { createRef, useEffect } from "react";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { createStackNavigator } from "@react-navigation/stack";
 import { Ionicons } from "@expo/vector-icons";
 import { NavigationContainer } from "@react-navigation/native";
+import { TouchableOpacity } from "react-native";
 
+// Import các màn hình
 import Home from "../screens/Home";
 import Schedule from "../screens/Schedule";
 import History from "../screens/History";
 import Notification from "../screens/Notification";
 import Profile from "../screens/accounts/Profile";
 import Login from "../screens/auth/Login";
-import { TouchableOpacity } from "react-native";
 import BloodPressureScreen from "../screens/BloodPressureScreen";
 import PersionalDetailScreen from "../screens/accounts/PersonalDetail";
 import EditPersonalInformationScreen from "../screens/accounts/EditPersonalDetail";
@@ -21,6 +22,11 @@ import MeasurementReminderScreen from "../screens/settings/TimeSetting";
 import Register from "../screens/Register";
 import BandConnection from "../screens/BandConection";
 import BluetoothReceiver from "../screens/History";
+import FormProfile from "../screens/accounts/FormProfile.";
+
+// Tạo navigation reference để có thể điều hướng từ bên ngoài component
+export const navigationRef = createRef();
+
 const Tab = createBottomTabNavigator();
 const Stack = createStackNavigator();
 
@@ -38,23 +44,12 @@ function HomeStack() {
       <Stack.Screen name="Update Emergency Contact" component={EmergencyContactEdit} options={{ headerBackTitle: "Back", headerShown: true }} />
       <Stack.Screen name="BP Alert Settings" component={BPAlertSettings} options={{ headerBackTitle: "Back", headerShown: true }} />
       <Stack.Screen name="Set Measurement Reminder" component={MeasurementReminderScreen} options={{ headerBackTitle: "Back", headerShown: true }} />
-
       <Stack.Screen name="Band Conection" component={BandConnection} options={{ headerBackTitle: "Back", headerShown: true }} />
-    
+      <Stack.Screen name="Form Profile" component={FormProfile} options={{ headerBackTitle: "Back", headerShown: true }} />
+
     </Stack.Navigator>
   );
 }
-// function ProfileStack() {
-//   return (
-//     <Stack.Navigator>
-//       <Stack.Screen name="HomeMain" component={Home} options={{ headerShown: false }} />
-//       <Stack.Screen name="Profile" component={Profile} options={{ headerBackTitle: "Back", headerShown: true }} />
-//       <Stack.Screen name="Login" component={Login} options={{ headerBackTitle: "Back", headerShown: true }} />
-//       <Stack.Screen name="Register" component={Register} options={{ headerBackTitle: "Back", headerShown: true }} />
-//       <Stack.Screen name="BloodPressure" component={BloodPressureScreen} options={{ headerBackTitle: "Back", headerShown: true }} />
-//     </Stack.Navigator>
-//   );
-// }
 
 function MainTabs() {
   return (
@@ -144,23 +139,7 @@ function MainTabs() {
           )
         }}
       />
-      {/* <Tab.Screen 
-        name="History" 
-        component={BluetoothReceiver} 
-        options={{
-          tabBarButton: (props) => (
-            <TabBarCustomButton 
-              {...props} 
-              containerStyle={{
-                backgroundColor: props.accessibilityState.selected ? "rgba(228, 88, 88, 0.91)" : "transparent",
-                borderRadius: 20,
-                flex: 1,
-                marginHorizontal: 5,
-              }}
-            />
-          )
-        }}
-      /> */}
+      
       <Tab.Screen 
         name="Notification" 
         component={Notification} 
@@ -179,20 +158,6 @@ function MainTabs() {
         }}
       />
     </Tab.Navigator>
-  );
-}
-
-export default function Navigation() {
-  return (
-    <NavigationContainer>
-      <Stack.Navigator screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="MainTabs" component={MainTabs} />
-        <Stack.Screen name="Profile" component={Profile} options={{ headerBackTitle: "Back", headerShown: true }} />
-        <Stack.Screen name="Login" component={Login} options={{ headerBackTitle: "Back", headerShown: true }} />
-        <Stack.Screen name="Register" component={Register} options={{ headerBackTitle: "Back", headerShown: true }} />
-        <Stack.Screen name="BloodPressure" component={BloodPressureScreen} options={{ headerBackTitle: "Back", headerShown: true }} />
-      </Stack.Navigator>
-    </NavigationContainer>
   );
 }
 
@@ -215,3 +180,17 @@ const TabBarCustomButton = ({ children, containerStyle, onPress }) => {
     </TouchableOpacity>
   );
 };
+
+export default function Navigation() {
+  return (
+    <NavigationContainer ref={navigationRef}>
+      <Stack.Navigator screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="MainTabs" component={MainTabs} />
+        <Stack.Screen name="Profile" component={Profile} options={{ headerBackTitle: "Back", headerShown: true }} />
+        <Stack.Screen name="Login" component={Login} options={{ headerBackTitle: "Back", headerShown: true }} />
+        <Stack.Screen name="Register" component={Register} options={{ headerBackTitle: "Back", headerShown: true }} />
+        <Stack.Screen name="BloodPressure" component={BloodPressureScreen} options={{ headerBackTitle: "Back", headerShown: true }} />
+      </Stack.Navigator>
+    </NavigationContainer>
+  );
+}

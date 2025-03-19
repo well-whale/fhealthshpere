@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Switch, ScrollView, SafeAreaView, StatusBar } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 
 // Menu Item Component - Tạo thành phần MenuItem riêng để tái sử dụng
 const MenuItem = ({ icon, text, rightElement, onPress, isActive = false }) => (
@@ -43,6 +43,16 @@ export default function Profile() {
             thumbColor={isWeightMonitoring ? "#007AFF" : "#f4f3f4"}
         />
     );
+    const route = useRoute();
+    const scrollViewRef = useRef(null);
+
+    useEffect(() => {
+        if (route.params?.scrollToBottom) {
+            setTimeout(() => {
+                scrollViewRef.current?.scrollToEnd({ animated: true });
+            }, 500); // Đợi một chút để đảm bảo nội dung đã tải xong
+        }
+    }, [route.params]);
 
     return (
         <SafeAreaView style={styles.safeArea}>

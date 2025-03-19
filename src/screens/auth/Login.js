@@ -6,6 +6,7 @@ import { useIdTokenAuthRequest } from 'expo-auth-session/providers/google';
 import { getAuth, GoogleAuthProvider, signInWithCredential } from 'firebase/auth';
 import { auth } from '../../firebase/firebaseConfig';
 import BackButton from '../../components/Button/BackButton';
+import { useNavigation } from '@react-navigation/native';
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -15,6 +16,7 @@ const { width, height } = Dimensions.get('window');
 export default function LoginScreen() {
     const [currentPage, setCurrentPage] = useState(0);
     const [isLoading, setIsLoading] = useState(false);
+    const navigation = useNavigation();
 
     // Onboarding slides data
     const slides = [
@@ -111,7 +113,8 @@ export default function LoginScreen() {
                 <View style={styles.buttonContainer}>
                     <TouchableOpacity
                         style={styles.loginButton}
-                        onPress={() => promptAsync()}
+                        // onPress={() => promptAsync()}
+                        onPress={() => navigation.navigate("Form Profile")}
                         disabled={!request || isLoading}
                     >
                         {isLoading ? (

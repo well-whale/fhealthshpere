@@ -278,6 +278,7 @@ const Schedule = () => {
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#fff" />
+      <View style={{ height: 50 }} />
       
       
       {/* Tab Navigation */}

@@ -190,6 +190,8 @@ const Notification = () => {
 
   return (
     <SafeAreaView style={styles.safeArea}>
+            <View style={{ height: 50 }} />
+      
       <StatusBar barStyle="dark-content" backgroundColor="#fff" />
       {/* Thanh tìm kiếm */}
       <View style={styles.searchBar}>
