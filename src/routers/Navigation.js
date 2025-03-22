@@ -12,7 +12,6 @@ import History from "../screens/History";
 import Notification from "../screens/Notification";
 import Profile from "../screens/accounts/Profile";
 import Login from "../screens/auth/Login";
-import BloodPressureScreen from "../screens/BloodPressureScreen";
 import PersionalDetailScreen from "../screens/accounts/PersonalDetail";
 import EditPersonalInformationScreen from "../screens/accounts/EditPersonalDetail";
 import EmergencyContactForm from "../screens/accounts/AddEmergency";
@@ -23,6 +22,7 @@ import Register from "../screens/Register";
 import BandConnection from "../screens/BandConection";
 import BluetoothReceiver from "../screens/History";
 import FormProfile from "../screens/accounts/FormProfile.";
+import BloodPressureScreen from "../screens/BloodPressureScreen";
 // import LoginScreen from "../screens/auth/LoginGoogle";
 
 // Tạo navigation reference để có thể điều hướng từ bên ngoài component
@@ -42,16 +42,6 @@ function HomeStack() {
       <Stack.Screen
         name="Profile"
         component={Profile}
-        options={{ headerBackTitle: "Back", headerShown: true }}
-      />
-      <Stack.Screen
-        name="Login"
-        component={Login}
-        options={{ headerBackTitle: "Back", headerShown: true }}
-      />
-      <Stack.Screen
-        name="Register"
-        component={Register}
         options={{ headerBackTitle: "Back", headerShown: true }}
       />
       <Stack.Screen
@@ -248,27 +238,10 @@ export default function Navigation() {
   return (
     <NavigationContainer ref={navigationRef}>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="Login" component={Login} />
+        <Stack.Screen name="FormProfile" component={FormProfile} />
+        <Stack.Screen name="BandConnection" component={BandConnection} />
         <Stack.Screen name="MainTabs" component={MainTabs} />
-        <Stack.Screen
-          name="Profile"
-          component={Profile}
-          options={{ headerBackTitle: "Back", headerShown: true }}
-        />
-        <Stack.Screen
-          name="Login"
-          component={Login}
-          options={{ headerBackTitle: "Back", headerShown: true }}
-        />
-        <Stack.Screen
-          name="Register"
-          component={Register}
-          options={{ headerBackTitle: "Back", headerShown: true }}
-        />
-        <Stack.Screen
-          name="BloodPressure"
-          component={BloodPressureScreen}
-          options={{ headerBackTitle: "Back", headerShown: true }}
-        />
       </Stack.Navigator>
     </NavigationContainer>
   );

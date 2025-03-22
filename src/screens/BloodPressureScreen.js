@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
     View,
     Text,
@@ -8,9 +8,10 @@ import {
     Easing,
     Dimensions,
     Alert,
-    Platform,
     SafeAreaView,
     ScrollView,
+    TextInput,
+    Modal
 } from 'react-native';
 import Svg, {
     Circle,
@@ -21,175 +22,196 @@ import Svg, {
     Stop,
     Polyline,
 } from 'react-native-svg';
-import { BleManager } from 'react-native-ble-plx';
-import { StatusBar } from 'expo-status-bar';
-import { request, PERMISSIONS, RESULTS } from 'react-native-permissions';
+import io from 'socket.io-client';
 
 const { width } = Dimensions.get('window');
 const MAX_WIDTH = Math.min(width - 40, 380);
 
-// Initialize Bluetooth manager
-const bleManager = new BleManager();
-
-const BloodPressureScreen = () => {
-    // State for heart rate and blood pressure values
-    const [heartRate, setHeartRate] = useState(75);
-    const [systolic, setSystolic] = useState(120);
-    const [diastolic, setDiastolic] = useState(80);
+export default function BloodPressureScreen() {
+    // State cho dữ liệu huyết áp và nhịp tim
+    const [heartRate, setHeartRate] = useState(0);
+    const [systolic, setSystolic] = useState(0);
+    const [diastolic, setDiastolic] = useState(0);
     const [measuring, setMeasuring] = useState(false);
     const [progress, setProgress] = useState(0);
     const [heartBeat, setHeartBeat] = useState(false);
-    const [showInfo, setShowInfo] = useState(null);
     const [pulsePoints, setPulsePoints] = useState(Array(20).fill(50));
-    const [isConnected, setIsConnected] = useState(false);
-    const [scanning, setScanning] = useState(false);
-    const [deviceName, setDeviceName] = useState('No Device');
+    
+    // State kết nối server
+    const [serverAddress, setServerAddress] = useState('');
+    const [serverConnected, setServerConnected] = useState(false);
+    const [socket, setSocket] = useState(null);
+    const [history, setHistory] = useState([]);
+    const [showConnectionModal, setShowConnectionModal] = useState(false);
 
     // Animated values
     const animatedScale = useState(new Animated.Value(1))[0];
     const animatedProgress = useState(new Animated.Value(0))[0];
-    const animatedHeartRate = useState(new Animated.Value(0))[0];
-    const animatedSystolic = useState(new Animated.Value(0))[0];
-    const animatedDiastolic = useState(new Animated.Value(0))[0];
+    
+    // Mô phỏng đo
+    const simulationTimer = useRef(null);
+    const simulationStep = useRef(0);
+    const simulationData = useRef({
+        systolic: 0,
+        diastolic: 0,
+        pulse: 0
+    });
 
-    // Request Bluetooth permissions
-    const requestBluetoothPermissions = async () => {
-        if (Platform.OS === 'android') {
-            const bluetoothScanPermission = await request(
-                PERMISSIONS.ANDROID.BLUETOOTH_SCAN
-            );
-            const bluetoothConnectPermission = await request(
-                PERMISSIONS.ANDROID.BLUETOOTH_CONNECT
-            );
-            const fineLocationPermission = await request(
-                PERMISSIONS.ANDROID.ACCESS_FINE_LOCATION
-            );
+    // Cleanup khi component unmount
+    useEffect(() => {
+        return () => {
+            if (socket) socket.disconnect();
+            if (simulationTimer.current) clearTimeout(simulationTimer.current);
+        };
+    }, [socket]);
 
-            return (
-                bluetoothScanPermission === RESULTS.GRANTED &&
-                bluetoothConnectPermission === RESULTS.GRANTED &&
-                fineLocationPermission === RESULTS.GRANTED
-            );
-        } else if (Platform.OS === 'ios') {
-            const bluetoothPermission = await request(PERMISSIONS.IOS.BLUETOOTH_PERIPHERAL);
-            return bluetoothPermission === RESULTS.GRANTED;
-        }
-        return false;
-    };
-
-    // Scan for Bluetooth devices
-    const scanForDevices = async () => {
-        const hasPermission = await requestBluetoothPermissions();
-
-        if (!hasPermission) {
-            Alert.alert('Permission Error', 'Bluetooth permissions are required');
+    // Kết nối tới server
+    const connectToServer = () => {
+        if (!serverAddress) {
+            Alert.alert('Lỗi', 'Vui lòng nhập địa chỉ server');
             return;
         }
 
-        if (scanning) return;
-
-        setScanning(true);
-
-        // Stop scanning after 10 seconds
-        setTimeout(() => {
-            bleManager.stopDeviceScan();
-            setScanning(false);
-        }, 10000);
-
+        const socketUrl = serverAddress.includes('http') ? serverAddress : `http://${serverAddress}:3000`;
         try {
-            bleManager.startDeviceScan(null, null, (error, device) => {
-                if (error) {
-                    console.error('Scan error:', error);
-                    setScanning(false);
-                    return;
-                }
+            const newSocket = io(socketUrl, {
+                transports: ['websocket'],
+                reconnection: true,
+                reconnectionAttempts: 5,
+                reconnectionDelay: 1000,
+                timeout: 10000
+            });
 
-                // Look for blood pressure monitor devices
-                // This is a simplified example - real implementation would filter by specific services
-                if (device.name && (
-                    device.name.toLowerCase().includes('bp') || 
-                    device.name.toLowerCase().includes('blood') || 
-                    device.name.toLowerCase().includes('pressure') ||
-                    device.name.toLowerCase().includes('heart') ||
-                    device.name.toLowerCase().includes('edifier')
-                )) {
-                    bleManager.stopDeviceScan();
-                    connectToDevice(device);
-                }
+            newSocket.on('connect', () => {
+                setServerConnected(true);
+                setSocket(newSocket);
+                setShowConnectionModal(false);
+                Alert.alert('Thành công', 'Đã kết nối đến server');
+            });
+
+            newSocket.on('connect_error', (error) => {
+                Alert.alert('Lỗi', `Kết nối thất bại: ${error.message}`);
+                setServerConnected(false);
+            });
+
+            newSocket.on('latestData', (data) => {
+                setMeasuring(false);
+                setSystolic(data.systolic);
+                setDiastolic(data.diastolic);
+                setHeartRate(data.pulse);
+                setHistory(prev => [{ ...data, timestamp: new Date().toLocaleTimeString() }, ...prev].slice(0, 10));
+            });
+
+            newSocket.on('disconnect', () => {
+                setServerConnected(false);
+                Alert.alert('Mất kết nối', 'Đã mất kết nối đến server');
             });
         } catch (error) {
-            console.error('Error starting scan:', error);
-            setScanning(false);
+            Alert.alert('Lỗi', `Không thể kết nối: ${error.message}`);
         }
     };
 
-    // Connect to a Bluetooth device
-    const connectToDevice = async (device) => {
-        try {
-            const connectedDevice = await device.connect();
-            setDeviceName(device.name || 'Unknown Device');
-            setIsConnected(true);
-            setScanning(false);
-
-            Alert.alert('Connected', `Connected to ${device.name || 'device'}`);
-
-            // In a real app, you would discover services and characteristics here
-            // and set up listeners for incoming data
-        } catch (error) {
-            console.error('Connection error:', error);
-            setIsConnected(false);
-            Alert.alert('Connection Failed', 'Could not connect to device');
+    // Ngắt kết nối server
+    const disconnectFromServer = () => {
+        if (socket) {
+            socket.disconnect();
+            setSocket(null);
+            setServerConnected(false);
         }
     };
-
-    // Disconnect from Bluetooth device
-    const disconnectDevice = async () => {
-        if (isConnected) {
-            try {
-                await bleManager.cancelDeviceConnection(deviceName);
-                setIsConnected(false);
-                setDeviceName('No Device');
-            } catch (error) {
-                console.error('Disconnect error:', error);
-            }
-        }
-    };
-
-    // Cleanup Bluetooth manager on unmount
-    useEffect(() => {
-        return () => {
-            bleManager.destroy();
+    
+    // Mô phỏng quá trình đo huyết áp
+    const simulateMeasurement = () => {
+        setMeasuring(true);
+        setProgress(0);
+        animatedProgress.setValue(0);
+        simulationStep.current = 0;
+        
+        // Khởi tạo giá trị ngẫu nhiên trong khoảng bình thường
+        simulationData.current = {
+            systolic: Math.floor(Math.random() * 40) + 100, // 100-140
+            diastolic: Math.floor(Math.random() * 20) + 60, // 60-80
+            pulse: Math.floor(Math.random() * 30) + 60 // 60-90
         };
-    }, []);
+        
+        // Bắt đầu mô phỏng đo
+        advanceSimulation();
+    };
+    
+    // Tiến trình mô phỏng theo từng bước
+    const advanceSimulation = () => {
+        simulationStep.current += 1;
+        
+        // Cập nhật tiến trình
+        const newProgress = Math.min(100, simulationStep.current * 5);
+        setProgress(newProgress);
+        animatedProgress.setValue(newProgress);
+        
+        // Mô phỏng các bước đo khác nhau
+        if (simulationStep.current === 5) {
+            // Bắt đầu hiển thị nhịp tim
+            setHeartRate(Math.floor(simulationData.current.pulse * 0.7));
+        } else if (simulationStep.current === 10) {
+            // Bắt đầu hiển thị huyết áp tâm trương
+            setDiastolic(Math.floor(simulationData.current.diastolic * 0.8));
+        } else if (simulationStep.current === 15) {
+            // Cập nhật nhịp tim
+            setHeartRate(simulationData.current.pulse);
+        } else if (simulationStep.current === 20) {
+            // Hoàn thành quá trình đo
+            setSystolic(simulationData.current.systolic);
+            setDiastolic(simulationData.current.diastolic);
+            setHeartRate(simulationData.current.pulse);
+            setHistory(prev => [{
+                systolic: simulationData.current.systolic,
+                diastolic: simulationData.current.diastolic,
+                pulse: simulationData.current.pulse,
+                timestamp: new Date().toLocaleTimeString()
+            }, ...prev].slice(0, 10));
+            setMeasuring(false);
+            return;
+        }
+        
+        // Lặp lại sau 200ms
+        simulationTimer.current = setTimeout(advanceSimulation, 200);
+    };
 
-    // Handle measurement process
+    // Bắt đầu đo
     const startMeasurement = () => {
-        if (measuring) return;
-
+        if (socket && serverConnected) {
+            // Nếu có server, sẽ gửi yêu cầu đến server
+            requestLatestData();
+        } else {
+            // Không có server, mô phỏng quá trình đo
+            simulateMeasurement();
+        }
+    };
+    
+    // Yêu cầu dữ liệu mới nhất từ server
+    const requestLatestData = () => {
+        if (!socket || !serverConnected) {
+            Alert.alert('Lỗi', 'Vui lòng kết nối server trước');
+            return;
+        }
         setMeasuring(true);
         setProgress(0);
         animatedProgress.setValue(0);
 
-        // Reset values
-        setSystolic(0);
-        setDiastolic(0);
-        setHeartRate(0);
-
         Animated.timing(animatedProgress, {
             toValue: 100,
-            duration: 10000,
+            duration: 5000, // Thời gian đo lâu hơn để thực tế hơn
             useNativeDriver: false,
-        }).start();
+        }).start(() => {
+            socket.emit('requestLatestData');
+        });
     };
 
-    // Animation for heartbeat and pulse wave
+    // Animation cho nhịp tim
     useEffect(() => {
         let interval;
-        if (measuring || heartRate > 0) {
+        if (heartRate > 0) {
             interval = setInterval(() => {
                 setHeartBeat(prev => !prev);
-
-                // Start heart beat animation
                 Animated.sequence([
                     Animated.timing(animatedScale, {
                         toValue: 1.1,
@@ -205,103 +227,54 @@ const BloodPressureScreen = () => {
                     }),
                 ]).start();
 
-                // Update pulse wave animation data
                 setPulsePoints(prev => {
                     const newPoints = [...prev];
                     newPoints.shift();
-
-                    // Create some variation in the heart rate line
-                    const baseValue = heartRate > 0 ? 50 : 20;
+                    const baseValue = 50;
                     const randomFactor = heartBeat ? 30 : 10;
                     const newValue = baseValue + Math.random() * randomFactor;
-
                     newPoints.push(newValue);
                     return newPoints;
                 });
-            }, heartRate > 0 ? 60000 / heartRate / 2 : 1000);
+            }, 60000 / heartRate / 2);
         }
-
         return () => clearInterval(interval);
-    }, [measuring, heartBeat, heartRate, animatedScale]);
+    }, [heartRate, heartBeat, animatedScale]);
 
-    // Simulation of measurement process
+    // Cập nhật tiến trình đo
     useEffect(() => {
-        // Listen to animated progress value changes
         const listener = animatedProgress.addListener(({ value }) => {
             setProgress(value);
-
-            // Update values gradually as the measurement progresses
-            if (value >= 30 && value < 31 && heartRate === 0) {
-                const newHeartRate = Math.floor(65 + Math.random() * 20);
-                setHeartRate(newHeartRate);
-                Animated.timing(animatedHeartRate, {
-                    toValue: newHeartRate,
-                    duration: 500,
-                    useNativeDriver: false,
-                }).start();
-            }
-
-            if (value >= 70 && value < 71 && diastolic === 0) {
-                const newDiastolic = Math.floor(75 + Math.random() * 15);
-                setDiastolic(newDiastolic);
-                Animated.timing(animatedDiastolic, {
-                    toValue: newDiastolic,
-                    duration: 500,
-                    useNativeDriver: false,
-                }).start();
-            }
-
-            if (value >= 99 && systolic === 0) {
-                const newSystolic = Math.floor(110 + Math.random() * 30);
-                setSystolic(newSystolic);
-                Animated.timing(animatedSystolic, {
-                    toValue: newSystolic,
-                    duration: 500,
-                    useNativeDriver: false,
-                }).start();
-                setMeasuring(false);
-            }
         });
+        return () => animatedProgress.removeListener(listener);
+    }, [animatedProgress]);
 
-        return () => {
-            animatedProgress.removeListener(listener);
-        };
-    }, [animatedProgress, heartRate, systolic, diastolic, animatedHeartRate, animatedSystolic, animatedDiastolic]);
-
-    // Calculate status based on blood pressure readings
+    // Xác định trạng thái huyết áp
     const getBPStatus = () => {
-        if (systolic === 0 || diastolic === 0) return { text: "Waiting...", color: "#A0AEC0" };
-
-        if (systolic < 120 && diastolic < 80)
-            return { text: "Normal", color: "#48BB78" };
-        else if ((systolic >= 120 && systolic <= 129) && diastolic < 80)
-            return { text: "Elevated", color: "#ECC94B" };
-        else if ((systolic >= 130 && systolic <= 139) || (diastolic >= 80 && diastolic <= 89))
-            return { text: "Stage 1 Hypertension", color: "#ED8936" };
-        else if (systolic >= 140 || diastolic >= 90)
-            return { text: "Stage 2 Hypertension", color: "#E53E3E" };
-        else if (systolic > 180 || diastolic > 120)
-            return { text: "Hypertensive Crisis", color: "#C53030" };
-
-        return { text: "Unknown", color: "#718096" };
+        if (systolic === 0 || diastolic === 0) return { text: "Đang chờ...", color: "#A0AEC0" };
+        if (systolic < 120 && diastolic < 80) return { text: "Bình thường", color: "#48BB78" };
+        if (systolic >= 120 && systolic <= 129 && diastolic < 80) return { text: "Huyết áp cao", color: "#ECC94B" };
+        if ((systolic >= 130 && systolic <= 139) || (diastolic >= 80 && diastolic <= 89)) return { text: "Tăng huyết áp giai đoạn 1", color: "#ED8936" };
+        if (systolic >= 140 || diastolic >= 90) return { text: "Tăng huyết áp giai đoạn 2", color: "#E53E3E" };
+        if (systolic > 180 || diastolic > 120) return { text: "Tăng huyết áp nghiêm trọng", color: "#C53030" };
+        return { text: "Không xác định", color: "#718096" };
     };
 
     const status = getBPStatus();
 
-    // Calculate circular progress percentages
+    // Tính toán phần trăm cho vòng tròn tiến trình
     const systolicPercentage = systolic > 0 ? (systolic / 200) * 100 : 0;
     const diastolicPercentage = diastolic > 0 ? (diastolic / 120) * 100 : 0;
     const heartRatePercentage = heartRate > 0 ? (heartRate / 150) * 100 : 0;
 
-    // Create SVG path for progress circles
+    // Tạo đường tròn tiến trình
     const createCirclePath = (percentage) => {
         const radius = 40;
         const circumference = 2 * Math.PI * radius;
-        const offset = circumference - (percentage / 100) * circumference;
-        return offset;
+        return circumference - (percentage / 100) * circumference;
     };
 
-    // Create custom heart rate visualization
+    // Tạo sóng nhịp tim
     const createPulseWave = () => {
         const height = 80;
         const width = MAX_WIDTH - 40;
@@ -332,14 +305,7 @@ const BloodPressureScreen = () => {
         );
     };
 
-    // Information tooltips content
-    const infoContent = {
-        systolic: "Systolic pressure is the force exerted by blood on the artery walls when the heart contracts. It's the top number in a blood pressure reading.",
-        diastolic: "Diastolic pressure is the force exerted by blood on the artery walls when the heart is at rest between beats. It's the bottom number in a blood pressure reading.",
-        heartrate: "Heart rate is the number of times your heart beats per minute. A normal resting heart rate is typically between 60-100 beats per minute.",
-    };
-
-    // Render heart SVG
+    // Hiển thị tim
     const renderHeart = () => (
         <Animated.View style={{ transform: [{ scale: animatedScale }] }}>
             <Svg width={100} height={100} viewBox="0 0 100 100">
@@ -354,192 +320,178 @@ const BloodPressureScreen = () => {
         </Animated.View>
     );
 
-    // Render circular progress indicator
-    const renderProgressCircle = (value, percentage, color, title, infoKey) => (
+    // Hiển thị vòng tròn tiến trình
+    const renderProgressCircle = (value, percentage, color, title) => (
         <View style={styles.circleContainer}>
-            <TouchableOpacity
-                style={styles.infoButton}
-                onPress={() => setShowInfo(showInfo === infoKey ? null : infoKey)}
-            >
-                <Text style={styles.infoButtonText}>i</Text>
-            </TouchableOpacity>
-
-            {showInfo === infoKey && (
-                <View style={styles.infoTooltip}>
-                    <Text style={styles.infoTooltipText}>{infoContent[infoKey]}</Text>
-                </View>
-            )}
-
             <Text style={styles.circleTitle}>{title}</Text>
-            <View style={styles.circleWrapper}>
-                <Svg height={100} width={100} viewBox="0 0 100 100">
-                    {/* Background circle */}
-                    <Circle
-                        cx="50" cy="50" r="40"
-                        fill="none"
-                        stroke="#f0f0f0"
-                        strokeWidth="8"
-                    />
-                    {/* Progress circle */}
-                    <Circle
-                        cx="50" cy="50" r="40"
-                        fill="none"
-                        stroke={color}
-                        strokeWidth="8"
-                        strokeLinecap="round"
-                        strokeDasharray={2 * Math.PI * 40}
-                        strokeDashoffset={createCirclePath(percentage)}
-                        rotation="-90"
-                        origin="50, 50"
-                    />
-                    <SvgText
-                        x="50" y="50"
-                        textAnchor="middle"
-                        fontWeight="bold"
-                        fontSize="18"
-                        fill="#333"
-                        dy="5"
-                    >
-                        {value || "--"}
-                    </SvgText>
-                    <SvgText
-                        x="50" y="65"
-                        textAnchor="middle"
-                        fontSize="10"
-                        fill="#666"
-                    >
-                        {title === "Systolic" || title === "Diastolic" ? "mmHg" : "BPM"}
-                    </SvgText>
-                </Svg>
-            </View>
+            <Svg height={100} width={100} viewBox="0 0 100 100">
+                <Circle cx="50" cy="50" r="40" fill="none" stroke="#f0f0f0" strokeWidth="8" />
+                <Circle
+                    cx="50" cy="50" r="40" fill="none" stroke={color} strokeWidth="8"
+                    strokeLinecap="round" strokeDasharray={2 * Math.PI * 40}
+                    strokeDashoffset={createCirclePath(percentage)} rotation="-90" origin="50, 50"
+                />
+                <SvgText x="50" y="50" textAnchor="middle" fontWeight="bold" fontSize="18" fill="#333" dy="5">
+                    {value || "--"}
+                </SvgText>
+                <SvgText x="50" y="65" textAnchor="middle" fontSize="10" fill="#666">
+                    {title === "Nhịp tim" ? "BPM" : "mmHg"}
+                </SvgText>
+            </Svg>
         </View>
     );
 
+    // Modal kết nối server
+    const renderConnectionModal = () => (
+        <Modal
+            visible={showConnectionModal}
+            transparent={true}
+            animationType="slide"
+            onRequestClose={() => setShowConnectionModal(false)}
+        >
+            <View style={styles.modalOverlay}>
+                <View style={styles.modalContent}>
+                    <Text style={styles.modalTitle}>Kết nối Server</Text>
+                    <TextInput
+                        style={styles.input}
+                        value={serverAddress}
+                        onChangeText={setServerAddress}
+                        placeholder="VD: 192.168.1.100"
+                        placeholderTextColor="#A0AEC0"
+                    />
+                    <View style={styles.modalButtons}>
+                        <TouchableOpacity 
+                            style={styles.modalButtonCancel} 
+                            onPress={() => setShowConnectionModal(false)}
+                        >
+                            <Text style={styles.buttonText}>Hủy</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity 
+                            style={styles.modalButtonConnect} 
+                            onPress={connectToServer}
+                        >
+                            <Text style={styles.buttonText}>Kết nối</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </View>
+        </Modal>
+    );
+
+    // Hiển thị trạng thái kết nối
+    const renderConnectionStatus = () => (
+        <View style={styles.connectionStatus}>
+            {serverConnected ? (
+                <View style={styles.connectedIndicator}>
+                    <View style={styles.statusDot} />
+                    <Text style={styles.connectedText}>Đã kết nối</Text>
+                    <TouchableOpacity 
+                        style={styles.disconnectButton} 
+                        onPress={disconnectFromServer}
+                    >
+                        <Text style={styles.disconnectText}>Ngắt kết nối</Text>
+                    </TouchableOpacity>
+                </View>
+            ) : (
+                <TouchableOpacity 
+                    style={styles.connectButton} 
+                    onPress={() => setShowConnectionModal(true)}
+                >
+                    <Text style={styles.connectText}>Kết nối với Server</Text>
+                </TouchableOpacity>
+            )}
+        </View>
+    );
+
+    // Hiển thị lịch sử đo
+    const renderHistoryPanel = () => {
+        if (history.length === 0) return null;
+        return (
+            <View style={styles.historyPanel}>
+                <Text style={styles.panelTitle}>Lịch sử đo</Text>
+                <ScrollView style={styles.historyScrollView}>
+                    {history.map((item, index) => (
+                        <View key={index} style={styles.historyItem}>
+                            <Text style={styles.historyTime}>{item.timestamp}</Text>
+                            <Text style={styles.historyValue}>
+                                {item.systolic}/{item.diastolic} mmHg, {item.pulse} BPM
+                            </Text>
+                        </View>
+                    ))}
+                </ScrollView>
+            </View>
+        );
+    };
+
     return (
         <SafeAreaView style={styles.safeArea}>
-            <StatusBar barStyle="light-content" />
             <ScrollView showsVerticalScrollIndicator={false}>
                 <View style={styles.container}>
                     <View style={styles.header}>
                         <Text style={styles.title}>CardioVision</Text>
-                        <Text style={styles.subtitle}>Interactive Heart Monitoring System</Text>
+                        <Text style={styles.subtitle}>Theo dõi tim mạch thời gian thực</Text>
                     </View>
 
-                    {/* Main display container */}
+                    {/* Trạng thái kết nối */}
+                    {renderConnectionStatus()}
+                    {renderConnectionModal()}
+
+                    {/* Hiển thị chính */}
                     <View style={styles.mainDisplay}>
-                        {/* Heart animation */}
                         <View style={styles.heartContainer}>
                             {renderHeart()}
                         </View>
-
-                        {/* Custom Heart Rate Visualization */}
                         <View style={styles.pulseContainer}>
                             {createPulseWave()}
                         </View>
                     </View>
 
-                    {/* Circular Progress Indicators */}
+                    {/* Vòng tròn tiến trình */}
                     <View style={styles.circlesRow}>
-                        {renderProgressCircle(
-                            systolic,
-                            systolicPercentage,
-                            '#ff3a5e',
-                            'Systolic',
-                            'systolic'
-                        )}
-
-                        {renderProgressCircle(
-                            diastolic,
-                            diastolicPercentage,
-                            '#3a7fff',
-                            'Diastolic',
-                            'diastolic'
-                        )}
+                        {renderProgressCircle(systolic, systolicPercentage, '#ff3a5e', 'Tâm thu')}
+                        {renderProgressCircle(diastolic, diastolicPercentage, '#3a7fff', 'Tâm trương')}
                     </View>
-
-                    {/* Heart Rate */}
                     <View style={styles.heartRateContainer}>
-                        {renderProgressCircle(
-                            heartRate,
-                            heartRatePercentage,
-                            '#9c3aff',
-                            'Heart Rate',
-                            'heartrate'
-                        )}
+                        {renderProgressCircle(heartRate, heartRatePercentage, '#9c3aff', 'Nhịp tim')}
                     </View>
 
-                    {/* Status */}
+                    {/* Trạng thái */}
                     <View style={[styles.statusContainer, { backgroundColor: status.color }]}>
                         <Text style={styles.statusText}>{status.text}</Text>
                     </View>
 
-                    {/* Progress Bar */}
+                    {/* Thanh tiến trình */}
                     {measuring && (
                         <View style={styles.progressContainer}>
-                            <View style={styles.progressLabelContainer}>
-                                <Text style={styles.progressLabel}>Measuring</Text>
-                                <Text style={styles.progressValue}>{Math.floor(progress)}%</Text>
-                            </View>
+                            <Text style={styles.progressLabel}>Đang đo...</Text>
                             <View style={styles.progressBarBackground}>
-                                <Animated.View
-                                    style={[
-                                        styles.progressBarFill,
-                                        { width: `${progress}%` }
-                                    ]}
-                                />
+                                <Animated.View style={[styles.progressBarFill, { width: `${progress}%` }]} />
                             </View>
                         </View>
                     )}
 
-                    {/* Bluetooth Status */}
-                    <View style={styles.bluetoothStatus}>
-                        <Text style={styles.deviceText}>
-                            {isConnected ? `Connected to: ${deviceName}` : 'Not connected'}
+                    {/* Nút đo */}
+                    <TouchableOpacity
+                        onPress={startMeasurement}
+                        disabled={measuring}
+                        style={[
+                            styles.buttonMeasure,
+                            measuring ? styles.buttonDisabled : null
+                        ]}
+                    >
+                        <Text style={styles.buttonText}>
+                            {measuring ? 'Đang đo...' : 'Bắt đầu đo'}
                         </Text>
-                    </View>
+                    </TouchableOpacity>
 
-                    {/* Action Buttons */}
-                    <View style={styles.buttonsContainer}>
-                        <TouchableOpacity
-                            onPress={startMeasurement}
-                            disabled={measuring}
-                            style={[
-                                styles.button,
-                                measuring ? styles.buttonDisabled : styles.buttonMeasure
-                            ]}
-                        >
-                            <Text style={styles.buttonText}>
-                                {measuring ? 'Measuring...' : 'Start Measurement'}
-                            </Text>
-                        </TouchableOpacity>
+                    {/* Lịch sử đo */}
+                    {renderHistoryPanel()}
 
-                        <TouchableOpacity
-                            onPress={isConnected ? disconnectDevice : scanForDevices}
-                            style={[
-                                styles.button,
-                                isConnected ? styles.buttonDisconnect : styles.buttonConnect,
-                                scanning ? styles.buttonDisabled : null
-                            ]}
-                            disabled={scanning}
-                        >
-                            <Text style={styles.buttonText}>
-                                {scanning 
-                                ? 'Scanning...' 
-                                : isConnected 
-                                    ? 'Disconnect' 
-                                    : 'Connect Bluetooth Device'}
-                            </Text>
-                        </TouchableOpacity>
-                    </View>
-
-                    {/* Instructions */}
-                    {!measuring && !heartRate && (
+                    {/* Hướng dẫn */}
+                    {!measuring && !systolic && !diastolic && (
                         <View style={styles.instructions}>
                             <Text style={styles.instructionText}>
-                                Tap the button above to start monitoring your vital signs
-                            </Text>
-                            <Text style={styles.instructionText}>
-                                Place your finger on the sensor for accurate readings
+                                Bấm "Bắt đầu đo" để tiến hành đo huyết áp
                             </Text>
                         </View>
                     )}
@@ -553,41 +505,146 @@ const BloodPressureScreen = () => {
 const styles = StyleSheet.create({
     safeArea: {
         flex: 1,
-        backgroundColor: "rgb(255, 255, 255)",
+        backgroundColor: '#EDF2F7',
     },
     container: {
         flex: 1,
-        backgroundColor: '#EDF2F7',
         padding: 20,
         alignItems: 'center',
-        paddingTop: 40
     },
     header: {
         alignItems: 'center',
         marginBottom: 20,
     },
     title: {
-        fontSize: 28,
+        fontSize: 32,
         fontWeight: 'bold',
-        color: '#4A5568',
-        marginBottom: 5,
+        color: '#2D3748',
     },
     subtitle: {
         fontSize: 16,
         color: '#718096',
     },
-    mainDisplay: {
-        backgroundColor: 'white',
+    connectionStatus: {
         width: '100%',
         maxWidth: MAX_WIDTH,
+        backgroundColor: '#fff',
+        borderRadius: 15,
+        padding: 15,
+        marginBottom: 20,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 5,
+        elevation: 3,
+    },
+    connectButton: {
+        backgroundColor: '#4299E1',
+        paddingVertical: 12,
+        paddingHorizontal: 20,
+        borderRadius: 10,
+        alignItems: 'center',
+    },
+    connectText: {
+        color: '#fff',
+        fontWeight: 'bold',
+        fontSize: 16,
+    },
+    connectedIndicator: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+    },
+    statusDot: {
+        width: 10,
+        height: 10,
+        borderRadius: 5,
+        backgroundColor: '#48BB78',
+        marginRight: 8,
+    },
+    connectedText: {
+        color: '#48BB78',
+        fontWeight: 'bold',
+        fontSize: 16,
+    },
+    disconnectButton: {
+        backgroundColor: '#FC8181',
+        paddingVertical: 8,
+        paddingHorizontal: 12,
+        borderRadius: 8,
+    },
+    disconnectText: {
+        color: '#fff',
+        fontWeight: 'bold',
+        fontSize: 14,
+    },
+    modalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0, 0, 0, 0.5)',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    modalContent: {
+        width: '80%',
+        backgroundColor: '#fff',
+        borderRadius: 15,
+        padding: 20,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.25,
+        shadowRadius: 5,
+        elevation: 5,
+    },
+    modalTitle: {
+        fontSize: 20,
+        fontWeight: 'bold',
+        color: '#2D3748',
+        marginBottom: 15,
+        textAlign: 'center',
+    },
+    modalButtons: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        marginTop: 10,
+    },
+    modalButtonCancel: {
+        backgroundColor: '#A0AEC0',
+        paddingVertical: 12,
+        paddingHorizontal: 20,
+        borderRadius: 10,
+        width: '48%',
+        alignItems: 'center',
+    },
+    modalButtonConnect: {
+        backgroundColor: '#4299E1',
+        paddingVertical: 12,
+        paddingHorizontal: 20,
+        borderRadius: 10,
+        width: '48%',
+        alignItems: 'center',
+    },
+    input: {
+        borderWidth: 1,
+        borderColor: '#E2E8F0',
+        borderRadius: 10,
+        padding: 12,
+        marginBottom: 15,
+        fontSize: 16,
+        color: '#2D3748',
+        backgroundColor: '#F7FAFC',
+    },
+    mainDisplay: {
+        width: '100%',
+        maxWidth: MAX_WIDTH,
+        backgroundColor: '#fff',
         borderRadius: 20,
         padding: 20,
+        marginBottom: 20,
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 2 },
         shadowOpacity: 0.1,
         shadowRadius: 10,
         elevation: 5,
-        marginBottom: 20,
     },
     heartContainer: {
         alignItems: 'center',
@@ -622,7 +679,7 @@ const styles = StyleSheet.create({
         marginBottom: 15,
     },
     circleContainer: {
-        backgroundColor: 'white',
+        backgroundColor: '#fff',
         borderRadius: 15,
         padding: 15,
         alignItems: 'center',
@@ -632,54 +689,15 @@ const styles = StyleSheet.create({
         shadowOpacity: 0.1,
         shadowRadius: 5,
         elevation: 3,
-        position: 'relative',
     },
     circleTitle: {
-        color: '#718096',
+        fontSize: 14,
         fontWeight: '600',
+        color: '#718096',
         marginBottom: 5,
     },
-    circleWrapper: {
-        position: 'relative',
-    },
-    infoButton: {
-        position: 'absolute',
-        top: 10,
-        right: 10,
-        width: 24,
-        height: 24,
-        borderRadius: 12,
-        backgroundColor: '#E2E8F0',
-        justifyContent: 'center',
-        alignItems: 'center',
-        zIndex: 1,
-    },
-    infoButtonText: {
-        fontSize: 14,
-        fontWeight: 'bold',
-        color: '#718096',
-    },
-    infoTooltip: {
-        position: 'absolute',
-        top: -70,
-        left: 0,
-        right: 0,
-        backgroundColor: 'white',
-        padding: 10,
-        borderRadius: 10,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.2,
-        shadowRadius: 5,
-        elevation: 5,
-        zIndex: 2,
-    },
-    infoTooltipText: {
-        fontSize: 12,
-        color: '#4A5568',
-    },
     heartRateContainer: {
-        backgroundColor: 'white',
+        backgroundColor: '#fff',
         borderRadius: 15,
         padding: 15,
         alignItems: 'center',
@@ -695,27 +713,20 @@ const styles = StyleSheet.create({
     statusContainer: {
         width: '100%',
         maxWidth: MAX_WIDTH,
-        backgroundColor: 'white',
         borderRadius: 15,
         padding: 15,
         marginBottom: 15,
         alignItems: 'center',
-        justifyContent: 'center',
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 5,
-        elevation: 3,
     },
     statusText: {
         fontSize: 18,
         fontWeight: 'bold',
-        color: 'white',
+        color: '#fff',
     },
     progressContainer: {
         width: '100%',
         maxWidth: MAX_WIDTH,
-        backgroundColor: 'white',
+        backgroundColor: '#fff',
         borderRadius: 15,
         padding: 15,
         marginBottom: 15,
@@ -725,24 +736,11 @@ const styles = StyleSheet.create({
         shadowRadius: 5,
         elevation: 3,
     },
-    progressLabelContainer: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        marginBottom: 8,
-    },
     progressLabel: {
-        fontSize: 12,
+        fontSize: 14,
         fontWeight: '600',
         color: '#4299E1',
-        backgroundColor: '#EBF8FF',
-        paddingHorizontal: 8,
-        paddingVertical: 4,
-        borderRadius: 10,
-    },
-    progressValue: {
-        fontSize: 12,
-        fontWeight: '600',
-        color: '#4299E1',
+        marginBottom: 8,
     },
     progressBarBackground: {
         height: 8,
@@ -754,68 +752,142 @@ const styles = StyleSheet.create({
         height: '100%',
         backgroundColor: '#4299E1',
     },
-    bluetoothStatus: {
+    buttonMeasure: {
         width: '100%',
         maxWidth: MAX_WIDTH,
-        backgroundColor: 'white',
-        borderRadius: 15,
-        padding: 10,
-        marginBottom: 15,
-        alignItems: 'center',
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.1,
-        shadowRadius: 3,
-        elevation: 2,
-    },
-    deviceText: {
-        color: '#4A5568',
-        fontWeight: '500',
-    },
-    buttonsContainer: {
-        width: '100%',
-        maxWidth: MAX_WIDTH,
-        gap: 10,
-    },
-    button: {
+        backgroundColor: '#4299E1',
         paddingVertical: 15,
         borderRadius: 15,
         alignItems: 'center',
-        justifyContent: 'center',
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 2 },
         shadowOpacity: 0.1,
         shadowRadius: 5,
         elevation: 3,
-        marginBottom: 10,
-    },
-    buttonMeasure: {
-        backgroundColor: '#4299E1',
-    },
-    buttonConnect: {
-        backgroundColor: '#48BB78',
-    },
-    buttonDisconnect: {
-        backgroundColor: '#ED8936',
     },
     buttonDisabled: {
         backgroundColor: '#A0AEC0',
     },
     buttonText: {
-        color: 'white',
+        color: '#fff',
         fontWeight: 'bold',
         fontSize: 16,
     },
+    historyPanel: {
+        width: '100%',
+        maxWidth: MAX_WIDTH,
+        backgroundColor: '#fff',
+        borderRadius: 15,
+        padding: 20,
+        marginTop: 20,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 5,
+        elevation: 3,
+    },
+    panelTitle: {
+        fontSize: 18,
+        fontWeight: 'bold',
+        color: '#2D3748',
+        marginBottom: 10,
+    },
+    historyScrollView: {
+        maxHeight: 150,
+    },
+    historyItem: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        paddingVertical: 5,
+        borderBottomWidth: 1,
+        borderBottomColor: '#E2E8F0',
+    },
+    historyTime: {
+        fontSize: 14,
+        color: '#718096',
+    },
+    historyValue: {
+        fontSize: 14,
+        color: '#2D3748',
+    },
     instructions: {
-        marginTop: 15,
+        marginTop: 20,
         alignItems: 'center',
+        padding: 15,
+        backgroundColor: '#FFF5F5',
+        borderRadius: 15,
+        width: '100%',
+        maxWidth: MAX_WIDTH,
+        borderWidth: 1,
+        borderColor: '#FED7D7',
     },
     instructionText: {
-        color: '#718096',
         fontSize: 14,
+        color: '#822727',
         textAlign: 'center',
-        marginBottom: 5,
     },
+    realtimeBadge: {
+        position: 'absolute',
+        top: 10,
+        right: 10,
+        backgroundColor: '#48BB78',
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        borderRadius: 10,
+    },
+    realtimeBadgeText: {
+        color: '#fff',
+        fontSize: 12,
+        fontWeight: 'bold',
+    },
+    deviceInfo: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginBottom: 10,
+    },
+    deviceInfoText: {
+        fontSize: 14,
+        color: '#718096',
+    },
+    serverInfo: {
+        marginTop: 5,
+        padding: 10,
+        backgroundColor: '#F7FAFC',
+        borderRadius: 10,
+        width: '100%',
+    },
+    serverInfoText: {
+        fontSize: 12,
+        color: '#718096',
+        textAlign: 'center',
+    },
+    loadingOverlay: {
+        ...StyleSheet.absoluteFillObject,
+        backgroundColor: 'rgba(0, 0, 0, 0.3)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        zIndex: 999,
+    },
+    loadingContainer: {
+        backgroundColor: '#fff',
+        borderRadius: 15,
+        padding: 20,
+        alignItems: 'center',
+        width: '80%',
+    },
+    loadingText: {
+        marginTop: 15,
+        fontSize: 16,
+        fontWeight: 'bold',
+        color: '#2D3748',
+    },
+    loadingIndicator: {
+        height: 80,
+    },
+    measurementPhase: {
+        marginTop: 10,
+        fontSize: 14,
+        color: '#4299E1',
+    }
 });
-
-export default BloodPressureScreen;

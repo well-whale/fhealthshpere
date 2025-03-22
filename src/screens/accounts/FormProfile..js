@@ -128,7 +128,7 @@ const FormProfile = () => {
             //     "Your information has been submitted successfully!",
             //     [{ text: "OK" }]
             //   );
-            navigation.navigate("Band Conection")
+            navigation.navigate("BandConnection")
         } else {
             Alert.alert(
                 "Incomplete Form",

@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Switch, ScrollView, SafeAreaView, StatusBar } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation, useRoute } from '@react-navigation/native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Menu Item Component - Tạo thành phần MenuItem riêng để tái sử dụng
 const MenuItem = ({ icon, text, rightElement, onPress, isActive = false }) => (
@@ -27,11 +28,24 @@ const SectionHeader = ({ title }) => (
     <Text style={styles.sectionTitle}>{title}</Text>
 );
 
+  
+  
 export default function Profile() {
     const navigation = useNavigation();
     const [isWeightMonitoring, setIsWeightMonitoring] = useState(false);
     const [expandedBPMonitor, setExpandedBPMonitor] = useState(true);
-
+    const logOut = async () => {
+        try {
+          await AsyncStorage.clear(); // Clear all stored data (tokens, setupCompleted, etc.)
+          navigation.reset({
+            index: 0,
+            routes: [{ name: 'Login' }],
+          }); // Reset navigation stack to Login screen
+        } catch (error) {
+          console.error('Error during logout:', error);
+          Alert.alert('Error', 'Failed to log out. Please try again.');
+        }
+      };
     // Chuẩn bị các thành phần bên phải cho mỗi mục
     const forwardIcon = <Ionicons name="chevron-forward-outline" size={20} color="#999" />;
     const downIcon = <Ionicons name="chevron-down-outline" size={20} color="#007AFF" />;
@@ -45,7 +59,7 @@ export default function Profile() {
     );
     const route = useRoute();
     const scrollViewRef = useRef(null);
-
+    
     useEffect(() => {
         if (route.params?.scrollToBottom) {
             setTimeout(() => {
@@ -155,15 +169,15 @@ export default function Profile() {
                     <View style={styles.authSection}>
                         <MenuItem
                             icon="log-in-outline"
-                            text="Login"
-                            onPress={() => navigation.navigate('Login')}
+                            text="Logout"
+                            onPress={logOut}
                         />
-
+{/* 
                         <MenuItem
                             icon="person-add-outline"
                             text="Register"
                             onPress={() => navigation.navigate('Register')}
-                        />
+                        /> */}
                     </View>
 
                     <Text style={styles.versionText}>Version 1.0.0</Text>

@@ -1,29 +1,19 @@
-import React, { useState, useEffect } from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  Image,
-  TouchableOpacity,
-  SafeAreaView,
-  StatusBar,
-  ActivityIndicator,
-  Dimensions,
-  Alert,
-  Platform,
-} from "react-native";
-import { Ionicons } from "@expo/vector-icons";
-import { useNavigation } from "@react-navigation/native";
-import auth from "@react-native-firebase/auth";
-import { GoogleSignin } from "@react-native-google-signin/google-signin";
+import React, { useState, useEffect } from 'react';
+import { View, Text, StyleSheet, Image, TouchableOpacity, SafeAreaView, StatusBar, ActivityIndicator, Dimensions, Alert } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { useNavigation } from '@react-navigation/native';
+import auth from '@react-native-firebase/auth';
+import { GoogleSignin } from '@react-native-google-signin/google-signin';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { getProgile, loginGGFirebase } from '../../services/account/accountServices';
 
-// Get screen dimensions
-const { width, height } = Dimensions.get("window");
+const { width, height } = Dimensions.get('window');
 
-// Configure Google Sign-In
 GoogleSignin.configure({
-  webClientId: "44086127203-slure7mgqba0mlncip5lbfi0r5j4hj96.apps.googleusercontent.com",
-  
+  webClientId: '44086127203-slure7mgqba0mlncip5lbfi0r5j4hj96.apps.googleusercontent.com',
+  offlineAccess: true,
+  forceCodeForRefreshToken: true,
+  scopes: ['profile', 'email'],
 });
 
 export default function LoginScreen() {
@@ -31,116 +21,70 @@ export default function LoginScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const navigation = useNavigation();
 
-  // Onboarding slides data
   const slides = [
-    {
-      image: require("../../../assets/imagelogin1.jpg"),
-      title: "Help millions of people",
-      subtitle: "everywhere, everytime!",
-    },
-    {
-      image: require("../../../assets/imagelogin2.jpg"),
-      title: "Expert doctors",
-      subtitle: "available 24/7",
-    },
-    {
-      image: require("../../../assets/imagelogin3.jpg"),
-      title: "Easy appointments",
-      subtitle: "book with one tap",
-    },
-    {
-      image: require("../../../assets/imagelogin4.jpg"),
-      title: "Secure conversations",
-      subtitle: "private and confidential",
-    },
+    { image: require('../../../assets/imagelogin1.jpg'), title: 'Help millions of people', subtitle: 'everywhere, everytime!' },
+    { image: require('../../../assets/imagelogin2.jpg'), title: 'Expert doctors', subtitle: 'available 24/7' },
+    { image: require('../../../assets/imagelogin3.jpg'), title: 'Easy appointments', subtitle: 'book with one tap' },
+    { image: require('../../../assets/imagelogin4.jpg'), title: 'Secure conversations', subtitle: 'private and confidential' },
   ];
 
   const handleGoogleSignIn = async () => {
     setIsLoading(true);
     try {
-      // Đảm bảo người dùng đã đăng xuất trước khi đăng nhập
       await GoogleSignin.signOut();
-      
-      // Kiểm tra xem thiết bị có hỗ trợ Google Play Services
-      await GoogleSignin.hasPlayServices();
-      
-      // Lấy token ID của người dùng
-      const { idToken } = await GoogleSignin.signIn();
-      
-      // Tạo Google credential
+      await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
+      const userInfo = await GoogleSignin.signIn();
+      const idToken = userInfo.data.idToken;
+      if (!idToken) throw new Error('Could not find idToken in Google response');
+
+      await AsyncStorage.setItem('idToken', idToken);
       const googleCredential = auth.GoogleAuthProvider.credential(idToken);
-      
-      // Đăng nhập người dùng bằng credential
       const userCredential = await auth().signInWithCredential(googleCredential);
-      
-      console.log("Đăng nhập thành công:", userCredential.user.uid);
-      
-      return userCredential;
-    } catch (error) {
-      console.error("Lỗi xác thực chi tiết:", error);
-      
-      if (error.code === 'DEVELOPER_ERROR') {
-        console.log("Kiểm tra cấu hình Google Sign-In và Firebase");
+      const firebaseIdToken = await userCredential.user.getIdToken();
+      await AsyncStorage.setItem('firebaseIdToken', firebaseIdToken);
+      const response = await loginGGFirebase(firebaseIdToken);
+      if (response.email) {
+        const setupCompleted = await AsyncStorage.getItem('setupCompleted');
+        await AsyncStorage.setItem('user', JSON.stringify(response)); // Ensure userId is stored as a string
+        if (!setupCompleted) {
+          navigation.navigate('FormProfile');
+        } else {
+          navigation.navigate('MainTabs');
+        }
       }
-      
-      Alert.alert("Đăng nhập thất bại", "Không thể đăng nhập bằng Google. Vui lòng thử lại sau.");
+    } catch (error) {
+      console.error('Authentication error:', error);
+      Alert.alert('Đăng nhập thất bại', 'Không thể đăng nhập bằng Google. Vui lòng thử lại sau.');
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Auto slide effect
   useEffect(() => {
     const interval = setInterval(() => {
-      setCurrentPage((prevPage) =>
-        prevPage === slides.length - 1 ? 0 : prevPage + 1
-      );
+      setCurrentPage((prevPage) => (prevPage === slides.length - 1 ? 0 : prevPage + 1));
     }, 5000);
-
     return () => clearInterval(interval);
   }, []);
 
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" />
-
-      {/* Main content */}
       <View style={styles.content}>
-        {/* Doctor and patients image */}
         <View style={styles.imageContainer}>
-          <Image
-            source={slides[currentPage].image}
-            style={styles.doctorImage}
-            resizeMode="cover"
-          />
+          <Image source={slides[currentPage].image} style={styles.doctorImage} resizeMode="cover" />
         </View>
-
-        {/* Text overlay */}
         <View style={styles.textContainer}>
           <Text style={styles.heading}>{slides[currentPage].title}</Text>
           <Text style={styles.subheading}>{slides[currentPage].subtitle}</Text>
         </View>
-
-        {/* Pagination dots */}
         <View style={styles.paginationContainer}>
           {slides.map((_, index) => (
-            <View
-              key={index}
-              style={[
-                styles.paginationDot,
-                currentPage === index ? styles.activeDot : {},
-              ]}
-            />
+            <View key={index} style={[styles.paginationDot, currentPage === index ? styles.activeDot : {}]} />
           ))}
         </View>
-
-        {/* Button container */}
         <View style={styles.buttonContainer}>
-          <TouchableOpacity
-            style={styles.loginButton}
-            onPress={handleGoogleSignIn}
-            disabled={isLoading}
-          >
+          <TouchableOpacity style={styles.loginButton} onPress={handleGoogleSignIn} disabled={isLoading}>
             {isLoading ? (
               <ActivityIndicator size="small" color="#fff" />
             ) : (
@@ -151,12 +95,9 @@ export default function LoginScreen() {
             )}
           </TouchableOpacity>
         </View>
-
-        {/* Professional link */}
         <View style={styles.professionalContainer}>
           <Text style={styles.professionalText}>
-            Are you a patient?{" "}
-            <Text style={styles.professionalLink}>Get here!</Text>
+            Are you a patient? <Text style={styles.professionalLink}>Get here!</Text>
           </Text>
         </View>
       </View>

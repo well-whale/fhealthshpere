@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, FlatList, StyleSheet, Alert, ActivityIndicator, SafeAreaView, StatusBar, Platform, TextInput } from 'react-native';
 import { BleManager } from 'react-native-ble-plx';
 import * as ExpoLocation from 'expo-location';
+import { useNavigation } from '@react-navigation/native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Create a singleton instance of BleManager
 let bleManagerInstance = null;
@@ -28,27 +30,28 @@ const BluetoothScanner = () => {
   const [searchMac, setSearchMac] = useState('');
   // Signal strength threshold (RSSI) to filter out weak signals
   const RSSI_THRESHOLD = -80; // Only show devices with RSSI > -80 dBm
+  const navigation = useNavigation();
 
   useEffect(() => {
     let stateSubscription = null;
-    
+
     const initializeBleManager = async () => {
       try {
         const manager = getBleManager();
-        
+
         // Initialize Bluetooth listener
         stateSubscription = manager.onStateChange((state) => {
           console.log('Bluetooth state changed:', state);
           setBluetoothState(state);
-          
+
           if (state === 'PoweredOn') {
             setPermissionsGranted(true);
           }
         }, true);
-        
+
         setManagerInitialized(true);
         console.log('BleManager initialized successfully');
-        
+
         // Request permissions after manager is initialized
         requestPermissions();
       } catch (error) {
@@ -56,9 +59,9 @@ const BluetoothScanner = () => {
         Alert.alert('Initialization Error', 'Failed to initialize Bluetooth manager: ' + error.message);
       }
     };
-    
+
     initializeBleManager();
-    
+
     // Clean up on component unmount
     return () => {
       if (isScanning) {
@@ -70,11 +73,11 @@ const BluetoothScanner = () => {
           console.error('Error stopping scan during cleanup:', error);
         }
       }
-      
+
       if (stateSubscription) {
         stateSubscription.remove();
       }
-      
+
       // Do NOT destroy the manager here - it's a singleton!
       // We'll let the app lifecycle handle BleManager destruction
     };
@@ -91,12 +94,12 @@ const BluetoothScanner = () => {
       setFilteredDevices(devices);
       return;
     }
-    
+
     const searchTerm = searchMac.trim().toLowerCase();
-    const filtered = devices.filter(device => 
+    const filtered = devices.filter(device =>
       device.id.toLowerCase().includes(searchTerm)
     );
-    
+
     setFilteredDevices(filtered);
   };
 
@@ -106,13 +109,13 @@ const BluetoothScanner = () => {
       // Sort by having a name first
       if (a.name && !b.name) return -1;
       if (!a.name && b.name) return 1;
-      
+
       // Then sort by signal strength (RSSI) - higher (less negative) is better
       // Note: RSSI is negative, so we reverse the comparison
       if (a.rssi && b.rssi) return b.rssi - a.rssi;
       if (a.rssi && !b.rssi) return -1;
       if (!a.rssi && b.rssi) return 1;
-      
+
       // If all else is equal, sort alphabetically by name or id
       const aName = a.name || a.id;
       const bName = b.name || b.id;
@@ -124,14 +127,14 @@ const BluetoothScanner = () => {
     try {
       // For Android, we need location and Bluetooth permissions
       const { status: locationStatus } = await ExpoLocation.requestForegroundPermissionsAsync();
-      
+
       // For Android 12+ (API level 31+), we need to request additional Bluetooth permissions
       let bluetoothPermissionsGranted = true;
-      
+
       if (Platform.OS === 'android' && parseInt(Platform.Version) >= 31) {
         // We need to use the PermissionsAndroid API directly
         const PermissionsAndroid = require('react-native').PermissionsAndroid;
-        
+
         const bluetoothScanStatus = await PermissionsAndroid.request(
           PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,
           {
@@ -142,7 +145,7 @@ const BluetoothScanner = () => {
             buttonPositive: "OK"
           }
         );
-        
+
         const bluetoothConnectStatus = await PermissionsAndroid.request(
           PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,
           {
@@ -153,12 +156,12 @@ const BluetoothScanner = () => {
             buttonPositive: "OK"
           }
         );
-        
-        bluetoothPermissionsGranted = 
-          bluetoothScanStatus === PermissionsAndroid.RESULTS.GRANTED && 
+
+        bluetoothPermissionsGranted =
+          bluetoothScanStatus === PermissionsAndroid.RESULTS.GRANTED &&
           bluetoothConnectStatus === PermissionsAndroid.RESULTS.GRANTED;
       }
-      
+
       if (locationStatus === 'granted' && bluetoothPermissionsGranted) {
         setPermissionsGranted(true);
       } else {
@@ -185,11 +188,11 @@ const BluetoothScanner = () => {
         Alert.alert('Not Ready', 'Bluetooth manager is initializing. Please try again in a moment.');
         return false;
       }
-      
+
       const manager = getBleManager();
       const state = await manager.state();
       console.log('Current Bluetooth state:', state);
-      
+
       if (state !== 'PoweredOn') {
         Alert.alert(
           'Bluetooth Required',
@@ -208,13 +211,13 @@ const BluetoothScanner = () => {
 
   const startScan = async () => {
     console.log('Attempting to start scan, permissions granted:', permissionsGranted);
-    
+
     if (!managerInitialized) {
       console.log('BleManager not yet initialized');
       Alert.alert('Not Ready', 'Bluetooth manager is initializing. Please try again in a moment.');
       return;
     }
-    
+
     if (!permissionsGranted) {
       await requestPermissions();
       if (!permissionsGranted) {
@@ -238,7 +241,7 @@ const BluetoothScanner = () => {
 
     try {
       const manager = getBleManager();
-      
+
       manager.startDeviceScan(null, null, (error, scannedDevice) => {
         if (scannedDevice) {
           console.log('Raw device found:', scannedDevice.id, 'RSSI:', scannedDevice.rssi);
@@ -253,21 +256,21 @@ const BluetoothScanner = () => {
         // Only add device to list if it has an id and good signal strength
         if (scannedDevice && scannedDevice.id) {
           console.log('Found device:', scannedDevice.name || scannedDevice.id, 'RSSI:', scannedDevice.rssi);
-          
+
           // Skip devices with weak signals - simulate real phone behavior
           // if (scannedDevice.rssi < RSSI_THRESHOLD) {
           //   console.log('Skipping device with weak signal:', scannedDevice.rssi, 'dBm');
           //   return;
           // }
-          
+
           // Check if we've already seen this device within the current scan
           setDevices(prevDevices => {
             // Find if this device exists in our current list
             const existingDeviceIndex = prevDevices.findIndex(d => d.id === scannedDevice.id);
-            
+
             // Make a copy of the current devices list
             const updatedDevices = [...prevDevices];
-            
+
             if (existingDeviceIndex !== -1) {
               // If we've seen this device before, update its information (especially RSSI)
               updatedDevices[existingDeviceIndex] = {
@@ -279,7 +282,7 @@ const BluetoothScanner = () => {
               // If this is a new device, add it to our list
               updatedDevices.push(scannedDevice);
             }
-            
+
             // Sort the devices by signal strength and return
             return sortDevices(updatedDevices);
           });
@@ -335,15 +338,15 @@ const BluetoothScanner = () => {
             try {
               console.log('Connecting to device:', device.id);
               Alert.alert('Connecting', `Connecting to ${device.name || device.id}...`);
-              
+
               const connectedDevice = await device.connect();
               console.log('Device connected');
-              
+
               const deviceWithServices = await connectedDevice.discoverAllServicesAndCharacteristics();
               console.log('Discovered services and characteristics');
-              
+
               Alert.alert('Success', `Connected to ${connectedDevice.name || connectedDevice.id}`);
-              
+
               // Here you could navigate to another screen or perform actions with the device
             } catch (error) {
               console.error('Connection error:', error);
@@ -356,7 +359,7 @@ const BluetoothScanner = () => {
   };
 
   const renderDeviceItem = ({ item }) => (
-    <TouchableOpacity 
+    <TouchableOpacity
       style={styles.deviceItem}
       onPress={() => connectToDevice(item)}
     >
@@ -367,11 +370,11 @@ const BluetoothScanner = () => {
           <View style={styles.signalContainer}>
             <Text style={styles.deviceRssi}>Signal: {item.rssi} dBm</Text>
             <View style={styles.signalStrength}>
-              <View 
+              <View
                 style={[
-                  styles.signalBar, 
+                  styles.signalBar,
                   { width: `${Math.min(100, Math.max(0, (item.rssi + 100) * 2))}%` }
-                ]} 
+                ]}
               />
             </View>
           </View>
@@ -383,7 +386,7 @@ const BluetoothScanner = () => {
   return (
     <SafeAreaView style={styles.container}>
       <StatusBar barStyle="dark-content" backgroundColor="#f5f5f5" />
-      
+
       <View style={styles.header}>
         <Text style={styles.title}>Bluetooth Device Scanner</Text>
         <Text style={styles.subtitle}>
@@ -401,7 +404,7 @@ const BluetoothScanner = () => {
           placeholderTextColor="#999"
         />
         {searchMac.length > 0 && (
-          <TouchableOpacity 
+          <TouchableOpacity
             style={styles.clearButton}
             onPress={() => setSearchMac('')}
           >
@@ -431,7 +434,7 @@ const BluetoothScanner = () => {
                   {searchMac ? 'No matching devices found' : 'No nearby devices found'}
                 </Text>
                 <Text style={styles.emptySubText}>
-                  {searchMac 
+                  {searchMac
                     ? 'Try a different MAC address or clear the search'
                     : 'Make sure Bluetooth is enabled on nearby devices'}
                 </Text>
@@ -449,6 +452,20 @@ const BluetoothScanner = () => {
         >
           <Text style={styles.buttonText}>{isScanning ? 'Stop Scan' : 'Scan for Devices'}</Text>
         </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.button}
+          onPress={async () => { // Make the function async
+            try {
+              await AsyncStorage.setItem('setupCompleted', 'true');
+              navigation.navigate('MainTabs'); // Ensure only one navigation call if needed
+            } catch (error) {
+              console.error("Error saving setupCompleted:", error);
+            }
+          }}
+        >
+          <Text style={styles.buttonText}>Skip to home page</Text>
+        </TouchableOpacity>
+
       </View>
       <View style={{ height: 100 }} />
 

@@ -1,5 +1,5 @@
 import { useNavigation } from '@react-navigation/native';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -10,19 +10,54 @@ import {
   StatusBar,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/MaterialIcons';
+import { getProgile } from '../../services/account/accountServices';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const PersionalDetailScreen = () => {
   const navigation = useNavigation();
 
   const [personalInfo, setPersonalInfo] = useState({
-    fullName: 'John Smith',
-    dateOfBirth: '15 Mar 1990',
-    gender: 'Male',
-    bloodType: 'A+',
-    phone: '+1234 567 890',
-    email: 'john.smith@email.com',
-    address: '123 Street, City',
+    fullName: '',
+    dateOfBirth: '',
+    gender: '',
+    role: '',
+    phone: '',
+    email: '',
+    address: '',
   });
+
+  const fetchProfile = async () => {
+    try {
+      const userData = await AsyncStorage.getItem('user');
+      if (!userData) {
+        console.log('Không tìm thấy dữ liệu user!');
+        return;
+      }
+
+      const user = JSON.parse(userData);
+      console.log('User:', user);
+
+      const response = await getProgile(user.userId); 
+      if (response) {
+        setPersonalInfo({
+          fullName: response.fullName || '',
+          dateOfBirth: response.dateOfBirth || '',
+          gender: response.gender || '',
+          role: response.role || '',
+          phone: response.phone || '',
+          email: response.email || '',
+          address: response.address || '',
+        });
+      }
+    } catch (error) {
+      console.error('Lỗi khi lấy thông tin hồ sơ:', error);
+    }
+  };
+
+  // Gọi `fetchProfile` khi component mount
+  useEffect(() => {
+    fetchProfile();
+  }, []);
 
   const [emergencyContacts, setEmergencyContacts] = useState([
     { id: 1, name: 'Jane Smith', relationship: 'Spouse', phone: '+1234 567 891' },
@@ -31,100 +66,100 @@ const PersionalDetailScreen = () => {
   ]);
 
 
-const handleAddEmergencyContact = () => {
-  // Function to handle adding emergency contact
-  console.log('Add emergency contact');
-};
+  const handleAddEmergencyContact = () => {
+    // Function to handle adding emergency contact
+    console.log('Add emergency contact');
+  };
 
-const handleEditContact = (contactId) => {
-  // Function to handle editing emergency contact
-  console.log('Edit contact', contactId);
-};
+  const handleEditContact = (contactId) => {
+    // Function to handle editing emergency contact
+    console.log('Edit contact', contactId);
+  };
 
-const handleDeleteContact = (contactId) => {
-  // Function to handle deleting emergency contact
-  console.log('Delete contact', contactId);
-};
+  const handleDeleteContact = (contactId) => {
+    // Function to handle deleting emergency contact
+    console.log('Delete contact', contactId);
+  };
 
-return (
-  <SafeAreaView style={styles.container}>
-    <StatusBar backgroundColor="#ffffff" barStyle="dark-content" />
+  return (
+    <SafeAreaView style={styles.container}>
+      <StatusBar backgroundColor="#ffffff" barStyle="dark-content" />
 
-    <ScrollView style={styles.content}>
-      {/* Personal Information Section */}
-      <View style={styles.section}>
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Personal & Contact Information</Text>
-          <TouchableOpacity onPress={() => navigation.navigate('Edit Personal Information', { personalInfo })}>
-            <Icon name="edit" size={20} color="#4285F4" />
-          </TouchableOpacity>
+      <ScrollView style={styles.content}>
+        {/* Personal Information Section */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Personal & Contact Information</Text>
+            <TouchableOpacity onPress={() => navigation.navigate('Edit Personal Information', { personalInfo })}>
+              <Icon name="edit" size={20} color="#4285F4" />
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.infoContainer}>
+            {Object.entries(personalInfo).map(([key, value], index) => {
+              const formattedKey = key.replace(/([A-Z])/g, ' $1')
+                .replace(/^./, str => str.toUpperCase())
+                .replace('Email', 'E-mail'); // Special case for email
+
+              return (
+                <View key={key} style={[
+                  styles.infoRow,
+                  index !== Object.entries(personalInfo).length - 1 && styles.infoRowWithBorder
+                ]}>
+                  <Text style={styles.infoLabel}>{formattedKey}</Text>
+                  <Text style={styles.infoValue}>{value}</Text>
+                </View>
+              );
+            })}
+          </View>
         </View>
 
-        <View style={styles.infoContainer}>
-          {Object.entries(personalInfo).map(([key, value], index) => {
-            const formattedKey = key.replace(/([A-Z])/g, ' $1')
-              .replace(/^./, str => str.toUpperCase())
-              .replace('Email', 'E-mail'); // Special case for email
+        {/* Emergency Contacts Section */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>Emergency Contacts</Text>
+            <TouchableOpacity onPress={() => navigation.navigate('Add Emergency Contact')}>
+              <Icon name="add" size={24} color="#4285F4" />
+            </TouchableOpacity>
+          </View>
 
-            return (
-              <View key={key} style={[
-                styles.infoRow,
-                index !== Object.entries(personalInfo).length - 1 && styles.infoRowWithBorder
-              ]}>
-                <Text style={styles.infoLabel}>{formattedKey}</Text>
-                <Text style={styles.infoValue}>{value}</Text>
+          <View style={styles.contactsContainer}>
+            {emergencyContacts.map((contact, index) => (
+              <View
+                key={contact.id}
+                style={[
+                  styles.contactCard,
+                  index !== emergencyContacts.length - 1 && styles.contactCardWithMargin
+                ]}
+              >
+                <View style={styles.contactInfo}>
+                  <Text style={styles.contactLabel}>Name</Text>
+                  <Text style={styles.contactValue}>{contact.name}</Text>
+                </View>
+                <View style={styles.contactInfo}>
+                  <Text style={styles.contactLabel}>Relationship</Text>
+                  <Text style={styles.contactValue}>{contact.relationship}</Text>
+                </View>
+                <View style={styles.contactInfo}>
+                  <Text style={styles.contactLabel}>Phone</Text>
+                  <Text style={styles.contactValue}>{contact.phone}</Text>
+                </View>
+                <View style={styles.contactActions}>
+                  <TouchableOpacity onPress={() => navigation.navigate('Update Emergency Contact', { contact })}>
+                    <Icon name="edit" size={20} color="#4285F4" />
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => handleDeleteContact(contact.id)}>
+                    <Icon name="delete" size={20} color="#FF0000" />
+                  </TouchableOpacity>
+                </View>
               </View>
-            );
-          })}
+            ))}
+          </View>
         </View>
-      </View>
-
-      {/* Emergency Contacts Section */}
-      <View style={styles.section}>
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Emergency Contacts</Text>
-          <TouchableOpacity onPress={() => navigation.navigate('Add Emergency Contact')}>
-            <Icon name="add" size={24} color="#4285F4" />
-          </TouchableOpacity>
-        </View>
-
-        <View style={styles.contactsContainer}>
-          {emergencyContacts.map((contact, index) => (
-            <View
-              key={contact.id}
-              style={[
-                styles.contactCard,
-                index !== emergencyContacts.length - 1 && styles.contactCardWithMargin
-              ]}
-            >
-              <View style={styles.contactInfo}>
-                <Text style={styles.contactLabel}>Name</Text>
-                <Text style={styles.contactValue}>{contact.name}</Text>
-              </View>
-              <View style={styles.contactInfo}>
-                <Text style={styles.contactLabel}>Relationship</Text>
-                <Text style={styles.contactValue}>{contact.relationship}</Text>
-              </View>
-              <View style={styles.contactInfo}>
-                <Text style={styles.contactLabel}>Phone</Text>
-                <Text style={styles.contactValue}>{contact.phone}</Text>
-              </View>
-              <View style={styles.contactActions}>
-                <TouchableOpacity onPress={() => navigation.navigate('Update Emergency Contact', { contact })}>
-                  <Icon name="edit" size={20} color="#4285F4" />
-                </TouchableOpacity>
-                <TouchableOpacity onPress={() => handleDeleteContact(contact.id)}>
-                  <Icon name="delete" size={20} color="#FF0000" />
-                </TouchableOpacity>
-              </View>
-            </View>
-          ))}
-        </View>
-      </View>
-      <View style={{ height: 100 }} />
-    </ScrollView>
-  </SafeAreaView>
-);
+        <View style={{ height: 100 }} />
+      </ScrollView>
+    </SafeAreaView>
+  );
 };
 
 const styles = StyleSheet.create({

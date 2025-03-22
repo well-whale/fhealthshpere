@@ -15,11 +15,11 @@
       },
       "oauth_client": [
         {
-          "client_id": "44086127203-0ple2ksjl7bqr0lmv13ch3b62nped6eq.apps.googleusercontent.com",
+          "client_id": "44086127203-84puuc7eukel0qomeq50t4ah96qphrg2.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
             "package_name": "com.zit.fhealthshpere",
-            "certificate_hash": "78f02b2afcc55cf7248482e79a174373a5112033"
+            "certificate_hash": "5e8f16062ea3cd2c4a0d547876baa6f38cabf625"
           }
         },
         {

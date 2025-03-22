@@ -15,9 +15,10 @@ import { useNavigation } from "@react-navigation/native";
 import { HandleNotification, requestUserPermission, sendNotification } from "../utils/handleNotification";
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import Svg, { Path } from 'react-native-svg';
+import { getProgile } from "../services/account/accountServices";
 
 export default function Home() {
-    const [username, setUsername] = useState("Nguyen Van A");
+    const [username, setUsername] = useState("");
     const [systolic, setSystolic] = useState(120);
     const [diastolic, setDiastolic] = useState(80);
 
@@ -30,6 +31,7 @@ export default function Home() {
         // { id: 5, name: "Health Goals", icon: "fitness", color: "#FFF0E0" },
         // { id: 6, name: "More Features", icon: "apps", color: "#E0FFFF" },
     ];
+
 
     // Tạo hai giá trị animation để di chuyển hai đường SVG
     const translateX1 = useRef(new Animated.Value(0)).current;
@@ -68,6 +70,16 @@ export default function Home() {
     const heartbeatPath = "M0,30 L40,30 L50,10 L60,50 L70,10 L80,50 L90,30 L130,30 L140,10 L150,50 L160,10 L170,50 L180,30 L220,30 L230,10 L240,50 L250,10 L260,50 L270,30 L300,30";
 
     useEffect(() => {
+        const fetchProfile = async () => {
+            const userData = await AsyncStorage.getItem('user');
+            const user = JSON.parse(userData);
+            if (user) {
+                const profile = await getProgile(user.userId);
+                setUsername(profile.fullName);
+            }
+        };
+
+        fetchProfile();
         requestUserPermission();
         // You could load the username and other data from AsyncStorage here
     }, []);
@@ -164,7 +176,7 @@ export default function Home() {
                                     style={[styles.featureBox, { backgroundColor: item.color }]}
                                     onPress={() => {
                                         if (item.name === "Emergency Contact") {
-                                            navigation.navigate("Personal Detail", { scrollToBottom: true });                                       
+                                            navigation.navigate("Personal Detail", { scrollToBottom: true });
                                         } else if (item.name === "Limit Value") {
                                             navigation.navigate("BP Alert Settings")
                                         } else if (item.name === "Band Conection") {
