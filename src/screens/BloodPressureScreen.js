@@ -1,4 +1,3 @@
-import { set } from "firebase/database";
 import React, { useState, useEffect, useRef } from "react";
 import {
   View,
@@ -24,20 +23,23 @@ import Svg, {
   Polyline,
 } from "react-native-svg";
 import io from "socket.io-client";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { db, ref, push, set } from "../firebase/firebaseConfig";
 
 const { width } = Dimensions.get("window");
 const MAX_WIDTH = Math.min(width - 40, 380);
 
 export default function BloodPressureScreen() {
-  // State cho dữ liệu huyết áp và nhịp tim
+  // Blood pressure and heart rate data
   const [systolic, setSystolic] = useState(0);
   const [diastolic, setDiastolic] = useState(0);
+  const [heartRate, setHeartRate] = useState(0);
   const [measuring, setMeasuring] = useState(false);
   const [progress, setProgress] = useState(0);
   const [heartBeat, setHeartBeat] = useState(false);
   const [pulsePoints, setPulsePoints] = useState(Array(20).fill(50));
 
-  // State kết nối server
+  // Server connection states
   const [serverAddress, setServerAddress] = useState("");
   const [serverConnected, setServerConnected] = useState(false);
   const [socket, setSocket] = useState(null);
@@ -45,21 +47,13 @@ export default function BloodPressureScreen() {
   const [brandID, setBrandID] = useState("");
   const [showConnectionModal, setShowConnectionModal] = useState(false);
   const [userID, setUserID] = useState("");
-  let bloodPressureData = {
-    systolic,
-    diastolic,
-    heartBeat,
-    pulsePoints,
-    history,
-    brandID,
-    userID,
-  };
+  const [connectedDevices, setConnectedDevices] = useState([]);
 
   // Animated values
   const animatedScale = useState(new Animated.Value(1))[0];
   const animatedProgress = useState(new Animated.Value(0))[0];
 
-  // Mô phỏng đo
+  // Simulation references
   const simulationTimer = useRef(null);
   const simulationStep = useRef(0);
   const simulationData = useRef({
@@ -68,7 +62,7 @@ export default function BloodPressureScreen() {
     pulse: 0,
   });
 
-  // Cleanup khi component unmount
+  // Cleanup when component unmounts
   useEffect(() => {
     return () => {
       if (socket) socket.disconnect();
@@ -76,29 +70,34 @@ export default function BloodPressureScreen() {
     };
   }, [socket]);
 
+  // Fetch user profile
   useEffect(() => {
     const fetchProfile = async () => {
-      const userData = await AsyncStorage.getItem("user");
-      const user = JSON.parse(userData);
-      if (user) {
-        setUserID(user.userId);
+      try {
+        const userData = await AsyncStorage.getItem("user");
+        if (userData) {
+          const user = JSON.parse(userData);
+          setUserID(user.userId);
+        }
+      } catch (error) {
+        console.error("Error fetching user profile:", error);
       }
     };
 
     fetchProfile();
-    // You could load the username and other data from AsyncStorage here
   }, []);
 
-  // Kết nối tới server
+  // Connect to server
   const connectToServer = () => {
     if (!serverAddress) {
-      Alert.alert("Lỗi", "Vui lòng nhập địa chỉ server");
+      Alert.alert("Error", "Please enter a server address");
       return;
     }
 
     const socketUrl = serverAddress.includes("http")
       ? serverAddress
       : `http://${serverAddress}:3000`;
+    
     try {
       const newSocket = io(socketUrl, {
         transports: ["websocket"],
@@ -112,12 +111,19 @@ export default function BloodPressureScreen() {
         setServerConnected(true);
         setSocket(newSocket);
         setShowConnectionModal(false);
-        Alert.alert("Thành công", "Đã kết nối đến server");
+        Alert.alert("Success", "Connected to server");
+        
+        // Request available devices
+        newSocket.emit("getConnectedDevices");
       });
 
       newSocket.on("connect_error", (error) => {
-        Alert.alert("Lỗi", `Kết nối thất bại: ${error.message}`);
+        Alert.alert("Error", `Connection failed: ${error.message}`);
         setServerConnected(false);
+      });
+
+      newSocket.on("connectedDevices", (devices) => {
+        setConnectedDevices(devices || []);
       });
 
       newSocket.on("latestData", (data) => {
@@ -125,121 +131,184 @@ export default function BloodPressureScreen() {
         setSystolic(data.systolic);
         setDiastolic(data.diastolic);
         setHeartRate(data.pulse);
-        setHistory((prev) =>
-          [
-            { ...data, timestamp: new Date().toLocaleTimeString() },
-            ...prev,
-          ].slice(0, 10)
-        );
         setBrandID(data.brandID);
+        
+        const newMeasurement = {
+          ...data,
+          timestamp: new Date().toLocaleTimeString(),
+          userId: userID
+        };
+        
+        setHistory((prev) => [newMeasurement, ...prev].slice(0, 10));
+        
+        // Save to Firebase after receiving data
+        saveDataToFirebase(newMeasurement);
       });
-      saveDataToFirebase();
 
       newSocket.on("disconnect", () => {
         setServerConnected(false);
-        Alert.alert("Mất kết nối", "Đã mất kết nối đến server");
+        setConnectedDevices([]);
+        Alert.alert("Disconnected", "Lost connection to server");
       });
     } catch (error) {
-      Alert.alert("Lỗi", `Không thể kết nối: ${error.message}`);
+      Alert.alert("Error", `Unable to connect: ${error.message}`);
     }
   };
 
-  // Ngắt kết nối server
+  // Disconnect from server
   const disconnectFromServer = () => {
     if (socket) {
       socket.disconnect();
       setSocket(null);
       setServerConnected(false);
+      setConnectedDevices([]);
     }
   };
 
-  // Mô phỏng quá trình đo huyết áp
+  // Simulate blood pressure measurement
   const simulateMeasurement = () => {
     setMeasuring(true);
     setProgress(0);
     animatedProgress.setValue(0);
     simulationStep.current = 0;
 
-    // Khởi tạo giá trị ngẫu nhiên trong khoảng bình thường
+    // Initialize random values within normal range
     simulationData.current = {
       systolic: Math.floor(Math.random() * 40) + 100, // 100-140
       diastolic: Math.floor(Math.random() * 20) + 60, // 60-80
       pulse: Math.floor(Math.random() * 30) + 60, // 60-90
     };
 
-    // Bắt đầu mô phỏng đo
+    // Start simulation
     advanceSimulation();
   };
 
-  // Thực hiện lưu vào firebase realtime
-  const saveDataToFirebase = async () => {
+  // Save data to Firebase
+  const saveDataToFirebase = async (measurementData) => {
     try {
-      const newPostKey = push(ref(db, "bloodPressureData/")).key;
-      await set(ref(db, `bloodPressureData/${newPostKey}`), bloodPressureData);
-      Alert.alert("Thành công", "Lưu dữ liệu thành công!");
+      const newData = {
+        BandId: measurementData.brandID || brandID || 1,
+        GhiChu: "user" + userID,
+        PatientId: parseInt(userID) || 0,
+        RecordMetricItems: {
+          0: {
+            HealthRecordId: 0,
+            MetricId: 1,
+            RecordId: 0,
+            Type: "string",
+            Value: measurementData.systolic.toString()
+          },
+          1: {
+            HealthRecordId: 0,
+            MetricId: 2,
+            RecordId: 0,
+            Type: "string",
+            Value: measurementData.diastolic.toString()
+          },
+          2: {
+            HealthRecordId: 0,
+            MetricId: 3,
+            RecordId: 0,
+            Type: "string",
+            Value: (measurementData.pulse || heartRate).toString()
+          }
+        }
+      };
+      
+      const newPostKey = push(ref(db, "healthRecords")).key;
+      console.log(newPostKey)
+      console.log(newData)
+
+      await set(ref(db, `healthRecords/${newPostKey}`), newData);
+      console.log("Data saved successfully to Firebase with key:", newPostKey);
     } catch (error) {
-      Alert.alert("Lỗi", "Không thể lưu dữ liệu vào Firebase");
+      console.error("Error saving data to Firebase:", error);
+      Alert.alert("Error", "Could not save data to Firebase");
     }
   };
-
-  // Tiến trình mô phỏng theo từng bước
+  // Advance simulation step by step
   const advanceSimulation = () => {
     simulationStep.current += 1;
 
-    // Cập nhật tiến trình
+    // Update progress
     const newProgress = Math.min(100, simulationStep.current * 5);
     setProgress(newProgress);
     animatedProgress.setValue(newProgress);
 
-    // Mô phỏng các bước đo khác nhau
+    // Simulate different measurement phases
     if (simulationStep.current === 5) {
-      // Bắt đầu hiển thị nhịp tim
+      // Start showing heart rate
       setHeartRate(Math.floor(simulationData.current.pulse * 0.7));
     } else if (simulationStep.current === 10) {
-      // Bắt đầu hiển thị huyết áp tâm trương
+      // Start showing diastolic pressure
       setDiastolic(Math.floor(simulationData.current.diastolic * 0.8));
     } else if (simulationStep.current === 15) {
-      // Cập nhật nhịp tim
+      // Update heart rate
       setHeartRate(simulationData.current.pulse);
     } else if (simulationStep.current === 20) {
-      // Hoàn thành quá trình đo
+      // Complete measurement
       setSystolic(simulationData.current.systolic);
       setDiastolic(simulationData.current.diastolic);
       setHeartRate(simulationData.current.pulse);
-      setHistory((prev) =>
-        [
-          {
-            systolic: simulationData.current.systolic,
-            diastolic: simulationData.current.diastolic,
-            pulse: simulationData.current.pulse,
-            timestamp: new Date().toLocaleTimeString(),
-          },
-          ...prev,
-        ].slice(0, 10)
-      );
+      
+      const newMeasurement = {
+        systolic: simulationData.current.systolic,
+        diastolic: simulationData.current.diastolic,
+        pulse: simulationData.current.pulse,
+        timestamp: new Date().toLocaleTimeString(),
+        userId: userID
+      };
+      
+      setHistory((prev) => [newMeasurement, ...prev].slice(0, 10));
       setMeasuring(false);
+      
+      // Save to Firebase after simulation
+      saveDataToFirebase(newMeasurement);
       return;
     }
 
-    // Lặp lại sau 200ms
+    // Repeat after 200ms
     simulationTimer.current = setTimeout(advanceSimulation, 200);
   };
 
-  // Bắt đầu đo
+  // Start measurement
   const startMeasurement = () => {
     if (socket && serverConnected) {
-      // Nếu có server, sẽ gửi yêu cầu đến server
+      // If connected to server, request data
       requestLatestData();
     } else {
-      // Không có server, mô phỏng quá trình đo
+      // Otherwise, simulate measurement
       simulateMeasurement();
     }
   };
 
-  // Yêu cầu dữ liệu mới nhất từ server
+  // const startMeasurement = () => {
+  //   if (socket && serverConnected) {
+  //     // If connected to server, request data
+  //     requestLatestData();
+  //   } else {
+  //     // Instead of simulating measurement, show a connection message
+  //     Alert.alert(
+  //       "No Connection", 
+  //       "Please connect to a server to get real measurement data.",
+  //       [
+  //         { 
+  //           text: "Connect", 
+  //           onPress: () => setShowConnectionModal(true) 
+  //         },
+  //         { 
+  //           text: "Cancel", 
+  //           style: "cancel" 
+  //         }
+  //       ]
+  //     );
+  //   }
+  // };
+
+  // Request latest data from server
   const requestLatestData = () => {
     if (!socket || !serverConnected) {
-      Alert.alert("Lỗi", "Vui lòng kết nối server trước");
+      Alert.alert("Error", "Please connect to server first");
       return;
     }
     setMeasuring(true);
@@ -248,14 +317,14 @@ export default function BloodPressureScreen() {
 
     Animated.timing(animatedProgress, {
       toValue: 100,
-      duration: 5000, // Thời gian đo lâu hơn để thực tế hơn
+      duration: 5000,
       useNativeDriver: false,
     }).start(() => {
       socket.emit("requestLatestData");
     });
   };
 
-  // Animation cho nhịp tim
+  // Heart beat animation
   useEffect(() => {
     let interval;
     if (heartRate > 0) {
@@ -290,7 +359,7 @@ export default function BloodPressureScreen() {
     return () => clearInterval(interval);
   }, [heartRate, heartBeat, animatedScale]);
 
-  // Cập nhật tiến trình đo
+  // Update measurement progress
   useEffect(() => {
     const listener = animatedProgress.addListener(({ value }) => {
       setProgress(value);
@@ -298,41 +367,41 @@ export default function BloodPressureScreen() {
     return () => animatedProgress.removeListener(listener);
   }, [animatedProgress]);
 
-  // Xác định trạng thái huyết áp
+  // Determine blood pressure status
   const getBPStatus = () => {
     if (systolic === 0 || diastolic === 0)
-      return { text: "Đang chờ...", color: "#A0AEC0" };
+      return { text: "Waiting...", color: "#A0AEC0" };
     if (systolic < 120 && diastolic < 80)
-      return { text: "Bình thường", color: "#48BB78" };
+      return { text: "Normal", color: "#48BB78" };
     if (systolic >= 120 && systolic <= 129 && diastolic < 80)
-      return { text: "Huyết áp cao", color: "#ECC94B" };
+      return { text: "Elevated", color: "#ECC94B" };
     if (
       (systolic >= 130 && systolic <= 139) ||
       (diastolic >= 80 && diastolic <= 89)
     )
-      return { text: "Tăng huyết áp giai đoạn 1", color: "#ED8936" };
+      return { text: "Hypertension Stage 1", color: "#ED8936" };
     if (systolic >= 140 || diastolic >= 90)
-      return { text: "Tăng huyết áp giai đoạn 2", color: "#E53E3E" };
+      return { text: "Hypertension Stage 2", color: "#E53E3E" };
     if (systolic > 180 || diastolic > 120)
-      return { text: "Tăng huyết áp nghiêm trọng", color: "#C53030" };
-    return { text: "Không xác định", color: "#718096" };
+      return { text: "Hypertensive Crisis", color: "#C53030" };
+    return { text: "Undefined", color: "#718096" };
   };
 
   const status = getBPStatus();
 
-  // Tính toán phần trăm cho vòng tròn tiến trình
+  // Calculate percentages for progress circles
   const systolicPercentage = systolic > 0 ? (systolic / 200) * 100 : 0;
   const diastolicPercentage = diastolic > 0 ? (diastolic / 120) * 100 : 0;
   const heartRatePercentage = heartRate > 0 ? (heartRate / 150) * 100 : 0;
 
-  // Tạo đường tròn tiến trình
+  // Create circle progress path
   const createCirclePath = (percentage) => {
     const radius = 40;
     const circumference = 2 * Math.PI * radius;
     return circumference - (percentage / 100) * circumference;
   };
 
-  // Tạo sóng nhịp tim
+  // Create pulse wave visualization
   const createPulseWave = () => {
     const height = 80;
     const width = MAX_WIDTH - 40;
@@ -371,10 +440,10 @@ export default function BloodPressureScreen() {
     );
   };
 
-  // Hiển thị tim
+  // Render heart
   const renderHeart = () => (
     <Animated.View style={{ transform: [{ scale: animatedScale }] }}>
-      <Svg width={100} height={100} viewBox="0 0 100 100">
+      <Svg width={70} height={70} viewBox="0 0 100 100">
         <Path
           d="M50,30 C35,10 0,10 0,40 C0,65 50,90 50,90 C50,90 100,65 100,40 C100,10 65,10 50,30 Z"
           fill={heartBeat ? "#ff3a5e" : "#ff6b8b"}
@@ -386,11 +455,11 @@ export default function BloodPressureScreen() {
     </Animated.View>
   );
 
-  // Hiển thị vòng tròn tiến trình
+  // Render progress circle
   const renderProgressCircle = (value, percentage, color, title) => (
     <View style={styles.circleContainer}>
       <Text style={styles.circleTitle}>{title}</Text>
-      <Svg height={100} width={100} viewBox="0 0 100 100">
+      <Svg height={80} width={80} viewBox="0 0 100 100">
         <Circle
           cx="50"
           cy="50"
@@ -424,13 +493,13 @@ export default function BloodPressureScreen() {
           {value || "--"}
         </SvgText>
         <SvgText x="50" y="65" textAnchor="middle" fontSize="10" fill="#666">
-          {title === "Nhịp tim" ? "BPM" : "mmHg"}
+          {title === "Pulse" ? "BPM" : "mmHg"}
         </SvgText>
       </Svg>
     </View>
   );
 
-  // Modal kết nối server
+  // Render server connection modal
   const renderConnectionModal = () => (
     <Modal
       visible={showConnectionModal}
@@ -440,12 +509,12 @@ export default function BloodPressureScreen() {
     >
       <View style={styles.modalOverlay}>
         <View style={styles.modalContent}>
-          <Text style={styles.modalTitle}>Kết nối Server</Text>
+          <Text style={styles.modalTitle}>Connect to Server</Text>
           <TextInput
             style={styles.input}
             value={serverAddress}
             onChangeText={setServerAddress}
-            placeholder="VD: 192.168.1.100"
+            placeholder="e.g. 192.168.1.100"
             placeholderTextColor="#A0AEC0"
           />
           <View style={styles.modalButtons}>
@@ -453,13 +522,13 @@ export default function BloodPressureScreen() {
               style={styles.modalButtonCancel}
               onPress={() => setShowConnectionModal(false)}
             >
-              <Text style={styles.buttonText}>Hủy</Text>
+              <Text style={styles.buttonText}>Cancel</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.modalButtonConnect}
               onPress={connectToServer}
             >
-              <Text style={styles.buttonText}>Kết nối</Text>
+              <Text style={styles.buttonText}>Connect</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -467,37 +536,61 @@ export default function BloodPressureScreen() {
     </Modal>
   );
 
-  // Hiển thị trạng thái kết nối
-  const renderConnectionStatus = () => (
-    <View style={styles.connectionStatus}>
+  // Render connected devices panel
+  const renderConnectedDevices = () => (
+    <View style={styles.devicesPanel}>
+      <Text style={styles.panelTitle}>Connected Devices</Text>
       {serverConnected ? (
-        <View style={styles.connectedIndicator}>
-          <View style={styles.statusDot} />
-          <Text style={styles.connectedText}>Đã kết nối</Text>
-          <TouchableOpacity
-            style={styles.disconnectButton}
-            onPress={disconnectFromServer}
-          >
-            <Text style={styles.disconnectText}>Ngắt kết nối</Text>
-          </TouchableOpacity>
-        </View>
+        <>
+          {connectedDevices.length > 0 ? (
+            <ScrollView style={styles.devicesList}>
+              {connectedDevices.map((device, index) => (
+                <View key={index} style={styles.deviceItem}>
+                  <View style={styles.deviceIcon} />
+                  <View style={styles.deviceInfo}>
+                    <Text style={styles.deviceName}>{device.name || "Device " + (index + 1)}</Text>
+                    <Text style={styles.deviceId}>{device.id || "ID: Unknown"}</Text>
+                  </View>
+                  <View style={styles.deviceStatus}>
+                    <View style={styles.statusIndicator} />
+                    <Text style={styles.statusText}>Active</Text>
+                  </View>
+                </View>
+              ))}
+            </ScrollView>
+          ) : (
+            <View style={styles.noDevices}>
+              <Text style={styles.noDevicesText}>No devices connected</Text>
+            </View>
+          )}
+          <View style={styles.serverInfo}>
+            <Text style={styles.serverInfoText}>
+              Connected to: {serverAddress}
+            </Text>
+            <TouchableOpacity
+              style={styles.disconnectButton}
+              onPress={disconnectFromServer}
+            >
+              <Text style={styles.disconnectText}>Disconnect</Text>
+            </TouchableOpacity>
+          </View>
+        </>
       ) : (
         <TouchableOpacity
           style={styles.connectButton}
           onPress={() => setShowConnectionModal(true)}
         >
-          <Text style={styles.connectText}>Kết nối với Server</Text>
+          <Text style={styles.connectText}>Connect to Server</Text>
         </TouchableOpacity>
       )}
     </View>
   );
 
-  // Hiển thị lịch sử đo
-  const renderHistoryPanel = () => {
-    if (history.length === 0) return null;
-    return (
-      <View style={styles.historyPanel}>
-        <Text style={styles.panelTitle}>Lịch sử đo</Text>
+  // Render measurement history panel
+  const renderHistoryPanel = () => (
+    <View style={styles.historyPanel}>
+      <Text style={styles.panelTitle}>Measurement History</Text>
+      {history.length > 0 ? (
         <ScrollView style={styles.historyScrollView}>
           {history.map((item, index) => (
             <View key={index} style={styles.historyItem}>
@@ -508,66 +601,67 @@ export default function BloodPressureScreen() {
             </View>
           ))}
         </ScrollView>
-      </View>
-    );
-  };
+      ) : (
+        <View style={styles.noHistory}>
+          <Text style={styles.noHistoryText}>No measurement history</Text>
+        </View>
+      )}
+    </View>
+  );
 
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView showsVerticalScrollIndicator={false}>
         <View style={styles.container}>
-          <View style={styles.header}>
-            <Text style={styles.title}>CardioVision</Text>
-            <Text style={styles.subtitle}>
-              Theo dõi tim mạch thời gian thực
-            </Text>
+          
+          {/* Main content area */}
+          <View style={styles.mainContent}>
+            {/* Left side - Connected devices */}
+            <View style={styles.leftPanel}>
+              {renderConnectedDevices()}
+              <View style={styles.pulseContainer}>
+                {renderHeart()}
+                {createPulseWave()}
+              </View>
+            </View>
+            
+            {/* Right side - Measurements */}
+            <View style={styles.rightPanel}>
+              {/* Status indicator */}
+              <View
+                style={[styles.statusContainer, { backgroundColor: status.color }]}
+              >
+                <Text style={styles.statusText}>{status.text}</Text>
+              </View>
+              
+              {/* Measurement circles */}
+              <View style={styles.measurementsContainer}>
+                {renderProgressCircle(
+                  systolic,
+                  systolicPercentage,
+                  "#ff3a5e",
+                  "Systolic"
+                )}
+                {renderProgressCircle(
+                  diastolic,
+                  diastolicPercentage,
+                  "#3a7fff",
+                  "Diastolic"
+                )}
+                {renderProgressCircle(
+                  heartRate,
+                  heartRatePercentage,
+                  "#9c3aff",
+                  "Pulse"
+                )}
+              </View>
+            </View>
           </View>
-
-          {/* Trạng thái kết nối */}
-          {renderConnectionStatus()}
-          {renderConnectionModal()}
-
-          {/* Hiển thị chính */}
-          <View style={styles.mainDisplay}>
-            <View style={styles.heartContainer}>{renderHeart()}</View>
-            <View style={styles.pulseContainer}>{createPulseWave()}</View>
-          </View>
-
-          {/* Vòng tròn tiến trình */}
-          <View style={styles.circlesRow}>
-            {renderProgressCircle(
-              systolic,
-              systolicPercentage,
-              "#ff3a5e",
-              "Tâm thu"
-            )}
-            {renderProgressCircle(
-              diastolic,
-              diastolicPercentage,
-              "#3a7fff",
-              "Tâm trương"
-            )}
-          </View>
-          <View style={styles.heartRateContainer}>
-            {renderProgressCircle(
-              heartRate,
-              heartRatePercentage,
-              "#9c3aff",
-              "Nhịp tim"
-            )}
-          </View>
-
-          {/* Trạng thái */}
-          <View
-            style={[styles.statusContainer, { backgroundColor: status.color }]}
-          >
-            <Text style={styles.statusText}>{status.text}</Text>
-          </View>
-
-          {/* Thanh tiến trình */}
+          
+          {/* Progress indicator */}
           {measuring && (
             <View style={styles.progressContainer}>
-              <Text style={styles.progressLabel}>Đang đo...</Text>
+              <Text style={styles.progressLabel}>Measuring...</Text>
               <View style={styles.progressBarBackground}>
                 <Animated.View
                   style={[styles.progressBarFill, { width: `${progress}%` }]}
@@ -575,8 +669,8 @@ export default function BloodPressureScreen() {
               </View>
             </View>
           )}
-
-          {/* Nút đo */}
+          
+          {/* Measurement button */}
           <TouchableOpacity
             onPress={startMeasurement}
             disabled={measuring}
@@ -586,23 +680,17 @@ export default function BloodPressureScreen() {
             ]}
           >
             <Text style={styles.buttonText}>
-              {measuring ? "Đang đo..." : "Bắt đầu đo"}
+              {measuring ? "Measuring..." : "Start Measurement"}
             </Text>
           </TouchableOpacity>
-
-          {/* Lịch sử đo */}
+          
+          {/* History panel */}
           {renderHistoryPanel()}
-
-          {/* Hướng dẫn */}
-          {!measuring && !systolic && !diastolic && (
-            <View style={styles.instructions}>
-              <Text style={styles.instructionText}>
-                Bấm "Bắt đầu đo" để tiến hành đo huyết áp
-              </Text>
-            </View>
-          )}
+          
+          {/* Connection modal */}
+          {renderConnectionModal()}
         </View>
-        <View style={{ height: 100 }} />
+        <View style={{ height: 20 }} />
       </ScrollView>
     </SafeAreaView>
   );
@@ -611,150 +699,121 @@ export default function BloodPressureScreen() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: "#EDF2F7",
+    backgroundColor: "#F7FAFC",
   },
   container: {
     flex: 1,
-    padding: 20,
-    alignItems: "center",
-  },
-  header: {
-    alignItems: "center",
-    marginBottom: 20,
+    padding: 16,
   },
   title: {
-    fontSize: 32,
+    fontSize: 24,
     fontWeight: "bold",
     color: "#2D3748",
-  },
-  subtitle: {
-    fontSize: 16,
-    color: "#718096",
-  },
-  connectionStatus: {
-    width: "100%",
-    maxWidth: MAX_WIDTH,
-    backgroundColor: "#fff",
-    borderRadius: 15,
-    padding: 15,
-    marginBottom: 20,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 5,
-    elevation: 3,
-  },
-  connectButton: {
-    backgroundColor: "#4299E1",
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 10,
-    alignItems: "center",
-  },
-  connectText: {
-    color: "#fff",
-    fontWeight: "bold",
-    fontSize: 16,
-  },
-  connectedIndicator: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  statusDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: "#48BB78",
-    marginRight: 8,
-  },
-  connectedText: {
-    color: "#48BB78",
-    fontWeight: "bold",
-    fontSize: 16,
-  },
-  disconnectButton: {
-    backgroundColor: "#FC8181",
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 8,
-  },
-  disconnectText: {
-    color: "#fff",
-    fontWeight: "bold",
-    fontSize: 14,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  modalContent: {
-    width: "80%",
-    backgroundColor: "#fff",
-    borderRadius: 15,
-    padding: 20,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 5,
-    elevation: 5,
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: "bold",
-    color: "#2D3748",
-    marginBottom: 15,
+    marginBottom: 16,
     textAlign: "center",
   },
-  modalButtons: {
+  mainContent: {
     flexDirection: "row",
-    justifyContent: "space-between",
-    marginTop: 10,
+    marginBottom: 16,
   },
-  modalButtonCancel: {
-    backgroundColor: "#A0AEC0",
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 10,
-    width: "48%",
-    alignItems: "center",
+  leftPanel: {
+    flex: 1,
+    marginRight: 8,
   },
-  modalButtonConnect: {
-    backgroundColor: "#4299E1",
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 10,
-    width: "48%",
-    alignItems: "center",
+  rightPanel: {
+    flex: 1,
+    marginLeft: 8,
   },
-  input: {
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-    borderRadius: 10,
-    padding: 12,
-    marginBottom: 15,
-    fontSize: 16,
-    color: "#2D3748",
-    backgroundColor: "#F7FAFC",
-  },
-  mainDisplay: {
-    width: "100%",
-    maxWidth: MAX_WIDTH,
-    backgroundColor: "#fff",
-    borderRadius: 20,
-    padding: 20,
-    marginBottom: 20,
+  devicesPanel: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
+    shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,
-    shadowRadius: 10,
-    elevation: 5,
+    shadowRadius: 3,
+    elevation: 2,
   },
-  heartContainer: {
+  panelTitle: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#2D3748",
+    marginBottom: 12,
+  },
+  devicesList: {
+    maxHeight: 120,
+  },
+  deviceItem: {
+    flexDirection: "row",
     alignItems: "center",
-    marginVertical: 15,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: "#EDF2F7",
+  },
+  deviceIcon: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: "#4FD1C5",
+    marginRight: 8,
+  },
+  deviceInfo: {
+    flex: 1,
+  },
+  deviceName: {
+    fontSize: 14,
+    color: "#2D3748",
+    fontWeight: "500",
+  },
+  deviceId: {
+    fontSize: 12,
+    color: "#718096",
+  },
+  deviceStatus: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  statusIndicator: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "#48BB78",
+    marginRight: 4,
+  },
+  statusText: {
+    fontSize: 12,
+    color: "#48BB78",
+  },
+  noDevices: {
+    padding: 16,
+    alignItems: "center",
+  },
+  noDevicesText: {
+    color: "#A0AEC0",
+    fontSize: 14,
+  },
+  serverInfo: {
+    marginTop: 12,
+    padding: 8,
+    backgroundColor: "#EDF2F7",
+    borderRadius: 8,
+  },
+  serverInfoText: {
+    fontSize: 12,
+    color: "#718096",
+    marginBottom: 8,
+  },
+  pulseContainer: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 12,
+    padding: 16,
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 2,
   },
   heartRateText: {
     position: "absolute",
@@ -768,83 +827,53 @@ const styles = StyleSheet.create({
   heartRateValue: {
     color: "white",
     fontWeight: "bold",
-    fontSize: 22,
+    fontSize: 18,
   },
-  pulseContainer: {
-    height: 80,
-    backgroundColor: "#F7FAFC",
-    borderRadius: 10,
-    padding: 5,
-    overflow: "hidden",
+  statusContainer: {
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 16,
+    alignItems: "center",
   },
-  circlesRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    width: "100%",
-    maxWidth: MAX_WIDTH,
-    marginBottom: 15,
+  statusText: {
+    fontSize: 16,
+    fontWeight: "bold",
+    color: "#FFFFFF",
+  },
+  measurementsContainer: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 12,
+    padding: 16,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3,
+    elevation: 2,
   },
   circleContainer: {
-    backgroundColor: "#fff",
-    borderRadius: 15,
-    padding: 15,
     alignItems: "center",
-    width: "48%",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 5,
-    elevation: 3,
+    marginBottom: 16,
   },
   circleTitle: {
     fontSize: 14,
     fontWeight: "600",
     color: "#718096",
-    marginBottom: 5,
-  },
-  heartRateContainer: {
-    backgroundColor: "#fff",
-    borderRadius: 15,
-    padding: 15,
-    alignItems: "center",
-    width: "100%",
-    maxWidth: MAX_WIDTH,
-    marginBottom: 15,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 5,
-    elevation: 3,
-  },
-  statusContainer: {
-    width: "100%",
-    maxWidth: MAX_WIDTH,
-    borderRadius: 15,
-    padding: 15,
-    marginBottom: 15,
-    alignItems: "center",
-  },
-  statusText: {
-    fontSize: 18,
-    fontWeight: "bold",
-    color: "#fff",
+    marginBottom: 8,
   },
   progressContainer: {
-    width: "100%",
-    maxWidth: MAX_WIDTH,
-    backgroundColor: "#fff",
-    borderRadius: 15,
-    padding: 15,
-    marginBottom: 15,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
+    shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,
-    shadowRadius: 5,
-    elevation: 3,
+    shadowRadius: 3,
+    elevation: 2,
   },
   progressLabel: {
     fontSize: 14,
-    fontWeight: "600",
+    fontWeight: "500",
     color: "#4299E1",
     marginBottom: 8,
   },
@@ -859,54 +888,44 @@ const styles = StyleSheet.create({
     backgroundColor: "#4299E1",
   },
   buttonMeasure: {
-    width: "100%",
-    maxWidth: MAX_WIDTH,
     backgroundColor: "#4299E1",
-    paddingVertical: 15,
-    borderRadius: 15,
+    paddingVertical: 16,
+    borderRadius: 12,
     alignItems: "center",
+    marginBottom: 16,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
+    shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,
-    shadowRadius: 5,
-    elevation: 3,
+    shadowRadius: 3,
+    elevation: 2,
   },
   buttonDisabled: {
     backgroundColor: "#A0AEC0",
   },
   buttonText: {
-    color: "#fff",
-    fontWeight: "bold",
+    color: "#FFFFFF",
+    fontWeight: "600",
     fontSize: 16,
   },
   historyPanel: {
-    width: "100%",
-    maxWidth: MAX_WIDTH,
-    backgroundColor: "#fff",
-    borderRadius: 15,
-    padding: 20,
-    marginTop: 20,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 12,
+    padding: 16,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
+    shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,
-    shadowRadius: 5,
-    elevation: 3,
-  },
-  panelTitle: {
-    fontSize: 18,
-    fontWeight: "bold",
-    color: "#2D3748",
-    marginBottom: 10,
+    shadowRadius: 3,
+    elevation: 2,
   },
   historyScrollView: {
-    maxHeight: 150,
+    maxHeight: 200,
   },
   historyItem: {
     flexDirection: "row",
     justifyContent: "space-between",
-    paddingVertical: 5,
+    paddingVertical: 10,
     borderBottomWidth: 1,
-    borderBottomColor: "#E2E8F0",
+    borderBottomColor: "#EDF2F7",
   },
   historyTime: {
     fontSize: 14,
@@ -914,86 +933,91 @@ const styles = StyleSheet.create({
   },
   historyValue: {
     fontSize: 14,
+    fontWeight: "500",
     color: "#2D3748",
   },
-  instructions: {
-    marginTop: 20,
+  noHistory: {
+    padding: 16,
     alignItems: "center",
-    padding: 15,
-    backgroundColor: "#FFF5F5",
-    borderRadius: 15,
-    width: "100%",
-    maxWidth: MAX_WIDTH,
-    borderWidth: 1,
-    borderColor: "#FED7D7",
   },
-  instructionText: {
+  noHistoryText: {
+    color: "#A0AEC0",
     fontSize: 14,
-    color: "#822727",
-    textAlign: "center",
   },
-  realtimeBadge: {
-    position: "absolute",
-    top: 10,
-    right: 10,
-    backgroundColor: "#48BB78",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 10,
-  },
-  realtimeBadgeText: {
-    color: "#fff",
-    fontSize: 12,
-    fontWeight: "bold",
-  },
-  deviceInfo: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 10,
-  },
-  deviceInfoText: {
-    fontSize: 14,
-    color: "#718096",
-  },
-  serverInfo: {
-    marginTop: 5,
-    padding: 10,
-    backgroundColor: "#F7FAFC",
-    borderRadius: 10,
-    width: "100%",
-  },
-  serverInfoText: {
-    fontSize: 12,
-    color: "#718096",
-    textAlign: "center",
-  },
-  loadingOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(0, 0, 0, 0.3)",
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
     justifyContent: "center",
     alignItems: "center",
-    zIndex: 999,
   },
-  loadingContainer: {
-    backgroundColor: "#fff",
-    borderRadius: 15,
-    padding: 20,
-    alignItems: "center",
+  modalContent: {
     width: "80%",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 12,
+    padding: 20,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 5,
+    elevation: 5,
   },
-  loadingText: {
-    marginTop: 15,
-    fontSize: 16,
+  modalTitle: {
+    fontSize: 18,
     fontWeight: "bold",
     color: "#2D3748",
+    marginBottom: 16,
+    textAlign: "center",
   },
-  loadingIndicator: {
-    height: 80,
+  input: {
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    borderRadius: 8,
+    padding: 12,
+    marginBottom: 16,
+    fontSize: 16,
+    color: "#2D3748",
+    backgroundColor: "#F7FAFC",
   },
-  measurementPhase: {
-    marginTop: 10,
-    fontSize: 14,
-    color: "#4299E1",
+  modalButtons: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+  },
+  modalButtonCancel: {
+    backgroundColor: "#A0AEC0",
+    padding: 12,
+    borderRadius: 8,
+    flex: 1,
+    marginRight: 8,
+    alignItems: "center",
+  },
+  modalButtonConnect: {
+    backgroundColor: "#4299E1",
+    padding: 12,
+    borderRadius: 8,
+    flex: 1,
+    marginLeft: 8,
+    alignItems: "center",
+  },
+  connectButton: {
+    backgroundColor: "#4299E1",
+    padding: 12,
+    borderRadius: 8,
+    alignItems: "center",
+    marginTop: 8,
+  },
+  connectText: {
+    color: "#FFFFFF",
+    fontWeight: "600",
+  },
+  disconnectButton: {
+    backgroundColor: "#FC8181",
+    padding: 8,
+    borderRadius: 6,
+    alignItems: "center",
+  },
+  disconnectText: {
+    color: "#FFFFFF",
+    fontWeight: "500",
+    fontSize: 12,
   },
 });

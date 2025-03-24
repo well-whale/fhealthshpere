@@ -18,6 +18,7 @@ const firebaseConfig = {
   messagingSenderId: "44086127203",
   appId: "1:44086127203:web:444374eafa3a617d8aa656",
   measurementId: "G-YN8ZXTDCQX",
+  databaseURL: "https://fhealth-sphere---login-default-rtdb.asia-southeast1.firebasedatabase.app",
 };
 
 // Khởi tạo Firebase
