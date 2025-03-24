@@ -1,8 +1,13 @@
 /**@format */
 import { initializeApp } from "firebase/app";
-import { getAuth, initializeAuth,getReactNativePersistence } from "firebase/auth"; // Thêm dòng này
-import ReactNativeAsyncStorage from '@react-native-async-storage/async-storage';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import {
+  getAuth,
+  initializeAuth,
+  getReactNativePersistence,
+} from "firebase/auth"; // Thêm dòng này
+import ReactNativeAsyncStorage from "@react-native-async-storage/async-storage";
+import { getDatabase, ref, set, push } from "firebase/database";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 // Cấu hình Firebase
 const firebaseConfig = {
@@ -12,15 +17,15 @@ const firebaseConfig = {
   storageBucket: "fhealth-sphere---login.firebasestorage.app",
   messagingSenderId: "44086127203",
   appId: "1:44086127203:web:444374eafa3a617d8aa656",
-  measurementId: "G-YN8ZXTDCQX"
+  measurementId: "G-YN8ZXTDCQX",
 };
 
 // Khởi tạo Firebase
 const app = initializeApp(firebaseConfig);
 const auth = initializeAuth(app, {
-  persistence: getReactNativePersistence(AsyncStorage)
+  persistence: getReactNativePersistence(AsyncStorage),
 });
+// Gửi dữ liệu lên database realtime của firebase
+const db = getDatabase(app);
 
-export { auth, app };
-
-
+export { db, ref, set, push };
