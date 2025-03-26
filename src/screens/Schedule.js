@@ -166,21 +166,7 @@ const Schedule = () => {
     }
   };
 
-  // Get reading status based on BP values
-  const getStatus = (systolic, diastolic) => {
-    if (systolic < 120 && diastolic < 80) {
-      return 'Normal';
-    } else if ((systolic >= 120 && systolic <= 129) && diastolic < 80) {
-      return 'Elevated';
-    } else if ((systolic >= 130 && systolic <= 139) || (diastolic >= 80 && diastolic <= 89)) {
-      return 'High (Stage 1)';
-    } else if (systolic >= 140 || diastolic >= 90) {
-      return 'High (Stage 2)';
-    } else if (systolic > 180 || diastolic > 120) {
-      return 'Crisis';
-    }
-    return 'Normal';
-  };
+ 
 
   const averages = getAverages();
 

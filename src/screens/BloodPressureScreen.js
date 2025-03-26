@@ -25,12 +25,14 @@ import Svg, {
 import io from "socket.io-client";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { db, ref, push, set } from "../firebase/firebaseConfig";
+import firebaseService from "../services/HealthRecord/firebaseService";
+import socketService from "../services/HealthRecord/SocketService";
+import { checkAndSendBPAlert } from "../utils/handleNotification";
 
 const { width } = Dimensions.get("window");
 const MAX_WIDTH = Math.min(width - 40, 380);
 
 export default function BloodPressureScreen() {
-  // Blood pressure and heart rate data
   const [systolic, setSystolic] = useState(0);
   const [diastolic, setDiastolic] = useState(0);
   const [heartRate, setHeartRate] = useState(0);
@@ -38,279 +40,143 @@ export default function BloodPressureScreen() {
   const [progress, setProgress] = useState(0);
   const [heartBeat, setHeartBeat] = useState(false);
   const [pulsePoints, setPulsePoints] = useState(Array(20).fill(50));
-
-  // Server connection states
-  const [serverAddress, setServerAddress] = useState("");
-  const [serverConnected, setServerConnected] = useState(false);
-  const [socket, setSocket] = useState(null);
+  const [serverConnected, setServerConnected] = useState(socketService.isConnected());
+  const [serverAddress, setServerAddress] = useState(socketService.getServerAddress() || "");
   const [history, setHistory] = useState([]);
   const [brandID, setBrandID] = useState("");
   const [showConnectionModal, setShowConnectionModal] = useState(false);
   const [userID, setUserID] = useState("");
   const [connectedDevices, setConnectedDevices] = useState([]);
 
-  // Animated values
   const animatedScale = useState(new Animated.Value(1))[0];
   const animatedProgress = useState(new Animated.Value(0))[0];
-
-  // Simulation references
   const simulationTimer = useRef(null);
   const simulationStep = useRef(0);
-  const simulationData = useRef({
-    systolic: 0,
-    diastolic: 0,
-    pulse: 0,
-  });
+  const simulationData = useRef({ systolic: 0, diastolic: 0, pulse: 0 });
 
-  // Cleanup when component unmounts
   useEffect(() => {
-    return () => {
-      if (socket) socket.disconnect();
-      if (simulationTimer.current) clearTimeout(simulationTimer.current);
-    };
-  }, [socket]);
+    const fetchProfileAndSetupSocket = async () => {
+      const userData = await AsyncStorage.getItem("user");
+      if (userData) {
+        const user = JSON.parse(userData);
+        setUserID(user.userId);
+      }
 
-  // Fetch user profile
-  useEffect(() => {
-    const fetchProfile = async () => {
-      try {
-        const userData = await AsyncStorage.getItem("user");
-        if (userData) {
-          const user = JSON.parse(userData);
-          setUserID(user.userId);
-        }
-      } catch (error) {
-        console.error("Error fetching user profile:", error);
+      setServerConnected(socketService.isConnected());
+      setServerAddress(socketService.getServerAddress() || "");
+
+      const socket = socketService.getSocket();
+      if (socket) {
+        socket.on("connectedDevices", (devices) => {
+          setConnectedDevices(devices || []);
+        });
+
+        socket.on("latestData", async (data) => {
+          setMeasuring(false);
+          setSystolic(data.systolic);
+          setDiastolic(data.diastolic);
+          setHeartRate(data.pulse);
+          setBrandID(data.brandID);
+
+          const newMeasurement = {
+            ...data,
+            timestamp: new Date().toLocaleTimeString(),
+            userId: userID,
+          };
+          setHistory((prev) => [newMeasurement, ...prev].slice(0, 10));
+          saveDataToFirebase(newMeasurement);
+
+          const now = new Date();
+
+          // Chuyển đổi sang múi giờ UTC+7
+          const formatDate = (date) => {
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, "0");
+            const day = String(date.getDate()).padStart(2, "0");
+
+            // Chuyển đổi sang giờ UTC+7
+            date.setHours(date.getHours() + 7);
+
+            const hours = String(date.getHours()).padStart(2, "0");
+            const minutes = String(date.getMinutes()).padStart(2, "0");
+
+            return `${year}-${month}-${day} ${hours}:${minutes}`;
+          };
+          const healthData = {
+            systolic: newMeasurement.systolic,
+            diastolic: newMeasurement.diastolic,
+            pulse: newMeasurement.pulse,
+            timestamp: formatDate(now)
+          };
+          await checkAndSendBPAlert(data.systolic, data.diastolic);
+          await AsyncStorage.setItem("latestHealthData", JSON.stringify(healthData));
+
+        });
+
+        socket.on("disconnect", () => {
+          setServerConnected(false);
+          setConnectedDevices([]);
+          Alert.alert("Disconnected", "Lost connection to server");
+        });
       }
     };
 
-    fetchProfile();
-  }, []);
+    fetchProfileAndSetupSocket();
 
-  // Connect to server
+    return () => {
+      if (simulationTimer.current) clearTimeout(simulationTimer.current);
+    };
+  }, [userID]);
+
   const connectToServer = () => {
     if (!serverAddress) {
       Alert.alert("Error", "Please enter a server address");
       return;
     }
 
-    const socketUrl = serverAddress.includes("http")
-      ? serverAddress
-      : `http://${serverAddress}:3000`;
-    
-    try {
-      const newSocket = io(socketUrl, {
-        transports: ["websocket"],
-        reconnection: true,
-        reconnectionAttempts: 5,
-        reconnectionDelay: 1000,
-        timeout: 10000,
-      });
-
-      newSocket.on("connect", () => {
+    socketService.connect(serverAddress, {
+      onConnected: () => {
         setServerConnected(true);
-        setSocket(newSocket);
         setShowConnectionModal(false);
         Alert.alert("Success", "Connected to server");
-        
-        // Request available devices
-        newSocket.emit("getConnectedDevices");
-      });
-
-      newSocket.on("connect_error", (error) => {
+        socketService.requestLatestData();
+      },
+      onConnectError: (error) => {
         Alert.alert("Error", `Connection failed: ${error.message}`);
         setServerConnected(false);
-      });
-
-      newSocket.on("connectedDevices", (devices) => {
-        setConnectedDevices(devices || []);
-      });
-
-      newSocket.on("latestData", (data) => {
-        setMeasuring(false);
-        setSystolic(data.systolic);
-        setDiastolic(data.diastolic);
-        setHeartRate(data.pulse);
-        setBrandID(data.brandID);
-        
-        const newMeasurement = {
-          ...data,
-          timestamp: new Date().toLocaleTimeString(),
-          userId: userID
-        };
-        
-        setHistory((prev) => [newMeasurement, ...prev].slice(0, 10));
-        
-        // Save to Firebase after receiving data
-        saveDataToFirebase(newMeasurement);
-      });
-
-      newSocket.on("disconnect", () => {
+      },
+      onDevicesUpdate: (devices) => setConnectedDevices(devices || []),
+      onDataReceived: () => { },
+      onDisconnected: () => {
         setServerConnected(false);
         setConnectedDevices([]);
         Alert.alert("Disconnected", "Lost connection to server");
-      });
-    } catch (error) {
-      Alert.alert("Error", `Unable to connect: ${error.message}`);
-    }
+      },
+    });
   };
 
-  // Disconnect from server
   const disconnectFromServer = () => {
-    if (socket) {
-      socket.disconnect();
-      setSocket(null);
-      setServerConnected(false);
-      setConnectedDevices([]);
-    }
+    socketService.disconnect();
+    setServerConnected(false);
+    setConnectedDevices([]);
   };
 
-  // Simulate blood pressure measurement
-  const simulateMeasurement = () => {
-    setMeasuring(true);
-    setProgress(0);
-    animatedProgress.setValue(0);
-    simulationStep.current = 0;
-
-    // Initialize random values within normal range
-    simulationData.current = {
-      systolic: Math.floor(Math.random() * 40) + 100, // 100-140
-      diastolic: Math.floor(Math.random() * 20) + 60, // 60-80
-      pulse: Math.floor(Math.random() * 30) + 60, // 60-90
-    };
-
-    // Start simulation
-    advanceSimulation();
-  };
-
-  // Save data to Firebase
-  const saveDataToFirebase = async (measurementData) => {
-    try {
-      const newData = {
-        BandId: measurementData.brandID || brandID || 1,
-        GhiChu: "user" + userID,
-        PatientId: parseInt(userID) || 0,
-        RecordMetricItems: {
-          0: {
-            HealthRecordId: 0,
-            MetricId: 1,
-            RecordId: 0,
-            Type: "string",
-            Value: measurementData.systolic.toString()
-          },
-          1: {
-            HealthRecordId: 0,
-            MetricId: 2,
-            RecordId: 0,
-            Type: "string",
-            Value: measurementData.diastolic.toString()
-          },
-          2: {
-            HealthRecordId: 0,
-            MetricId: 3,
-            RecordId: 0,
-            Type: "string",
-            Value: (measurementData.pulse || heartRate).toString()
-          }
-        }
-      };
-      
-      const newPostKey = push(ref(db, "healthRecords")).key;
-      console.log(newPostKey)
-      console.log(newData)
-
-      await set(ref(db, `healthRecords/${newPostKey}`), newData);
-      console.log("Data saved successfully to Firebase with key:", newPostKey);
-    } catch (error) {
-      console.error("Error saving data to Firebase:", error);
-      Alert.alert("Error", "Could not save data to Firebase");
-    }
-  };
-  // Advance simulation step by step
-  const advanceSimulation = () => {
-    simulationStep.current += 1;
-
-    // Update progress
-    const newProgress = Math.min(100, simulationStep.current * 5);
-    setProgress(newProgress);
-    animatedProgress.setValue(newProgress);
-
-    // Simulate different measurement phases
-    if (simulationStep.current === 5) {
-      // Start showing heart rate
-      setHeartRate(Math.floor(simulationData.current.pulse * 0.7));
-    } else if (simulationStep.current === 10) {
-      // Start showing diastolic pressure
-      setDiastolic(Math.floor(simulationData.current.diastolic * 0.8));
-    } else if (simulationStep.current === 15) {
-      // Update heart rate
-      setHeartRate(simulationData.current.pulse);
-    } else if (simulationStep.current === 20) {
-      // Complete measurement
-      setSystolic(simulationData.current.systolic);
-      setDiastolic(simulationData.current.diastolic);
-      setHeartRate(simulationData.current.pulse);
-      
-      const newMeasurement = {
-        systolic: simulationData.current.systolic,
-        diastolic: simulationData.current.diastolic,
-        pulse: simulationData.current.pulse,
-        timestamp: new Date().toLocaleTimeString(),
-        userId: userID
-      };
-      
-      setHistory((prev) => [newMeasurement, ...prev].slice(0, 10));
-      setMeasuring(false);
-      
-      // Save to Firebase after simulation
-      saveDataToFirebase(newMeasurement);
-      return;
-    }
-
-    // Repeat after 200ms
-    simulationTimer.current = setTimeout(advanceSimulation, 200);
-  };
-
-  // Start measurement
   const startMeasurement = () => {
-    if (socket && serverConnected) {
-      // If connected to server, request data
+    if (socketService.isConnected()) {
       requestLatestData();
     } else {
-      // Otherwise, simulate measurement
-      simulateMeasurement();
+      Alert.alert(
+        "No Connection",
+        "Please connect to a server to get real measurement data.",
+        [
+          { text: "Connect", onPress: () => setShowConnectionModal(true) },
+          { text: "Cancel", style: "cancel" },
+        ]
+      );
     }
   };
 
-  // const startMeasurement = () => {
-  //   if (socket && serverConnected) {
-  //     // If connected to server, request data
-  //     requestLatestData();
-  //   } else {
-  //     // Instead of simulating measurement, show a connection message
-  //     Alert.alert(
-  //       "No Connection", 
-  //       "Please connect to a server to get real measurement data.",
-  //       [
-  //         { 
-  //           text: "Connect", 
-  //           onPress: () => setShowConnectionModal(true) 
-  //         },
-  //         { 
-  //           text: "Cancel", 
-  //           style: "cancel" 
-  //         }
-  //       ]
-  //     );
-  //   }
-  // };
-
-  // Request latest data from server
   const requestLatestData = () => {
-    if (!socket || !serverConnected) {
-      Alert.alert("Error", "Please connect to server first");
-      return;
-    }
     setMeasuring(true);
     setProgress(0);
     animatedProgress.setValue(0);
@@ -320,7 +186,7 @@ export default function BloodPressureScreen() {
       duration: 5000,
       useNativeDriver: false,
     }).start(() => {
-      socket.emit("requestLatestData");
+      socketService.requestLatestData();
     });
   };
 
@@ -613,7 +479,7 @@ export default function BloodPressureScreen() {
     <SafeAreaView style={styles.safeArea}>
       <ScrollView showsVerticalScrollIndicator={false}>
         <View style={styles.container}>
-          
+
           {/* Main content area */}
           <View style={styles.mainContent}>
             {/* Left side - Connected devices */}
@@ -624,7 +490,7 @@ export default function BloodPressureScreen() {
                 {createPulseWave()}
               </View>
             </View>
-            
+
             {/* Right side - Measurements */}
             <View style={styles.rightPanel}>
               {/* Status indicator */}
@@ -633,7 +499,7 @@ export default function BloodPressureScreen() {
               >
                 <Text style={styles.statusText}>{status.text}</Text>
               </View>
-              
+
               {/* Measurement circles */}
               <View style={styles.measurementsContainer}>
                 {renderProgressCircle(
@@ -657,7 +523,7 @@ export default function BloodPressureScreen() {
               </View>
             </View>
           </View>
-          
+
           {/* Progress indicator */}
           {measuring && (
             <View style={styles.progressContainer}>
@@ -669,7 +535,7 @@ export default function BloodPressureScreen() {
               </View>
             </View>
           )}
-          
+
           {/* Measurement button */}
           <TouchableOpacity
             onPress={startMeasurement}
@@ -683,10 +549,10 @@ export default function BloodPressureScreen() {
               {measuring ? "Measuring..." : "Start Measurement"}
             </Text>
           </TouchableOpacity>
-          
+
           {/* History panel */}
           {renderHistoryPanel()}
-          
+
           {/* Connection modal */}
           {renderConnectionModal()}
         </View>
